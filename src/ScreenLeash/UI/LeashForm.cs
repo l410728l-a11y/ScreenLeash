@@ -382,6 +382,72 @@ public sealed class LeashForm : Form
         }
     }
 
+    /// <summary>
+    /// 拖拽判定：由 <see cref="LeashHost"/> 每 tick（约 40ms）调用，传入**全局光标**和左键状态。
+    ///
+    /// <para>为什么不放在 OnMouseMove 里：实测 <c>Capture = true</c> 在这个窗口上设不上
+    /// （WS_EX_NOACTIVATE + TransparencyKey），而 Capture 设不上时
+    /// <see cref="OnMouseCaptureChanged"/> 的兜底会把 <c>_pressedIndex</c> 清成 -1，
+    /// 于是"按下明明命中了卡片（日志 hit=1），拖到一半却变成 -1（StartDragOut index=-1）"。
+    /// 轮询不依赖鼠标事件、不依赖捕获，从根上绕开这一整类问题。</para>
+    /// </summary>
+    public void PollDrag(Point screenCursor, bool leftDown)
+    {
+        if (_dragging)
+        {
+            return;
+        }
+
+        if (!leftDown)
+        {
+            // 松手：内部拖拽就提交，然后清空按下状态。
+            if (_internalDrag)
+            {
+                CommitInternalDrag();
+                _internalDrag = false;
+                _insertIndex = -1;
+                _dragTargetForm = null;
+                Invalidate();
+            }
+
+            _pressedIndex = -1;
+            return;
+        }
+
+        if (_pressedIndex < 0)
+        {
+            return;
+        }
+
+        var client = PointToClient(screenCursor);
+        var dragSize = SystemInformation.DragSize;
+        var moved = Math.Abs(client.X - _pressPoint.X) > dragSize.Width
+                    || Math.Abs(client.Y - _pressPoint.Y) > dragSize.Height;
+        if (!moved)
+        {
+            return;
+        }
+
+        _internalDrag = true;
+
+        if (IsOverAnyLeash(screenCursor, out var target))
+        {
+            _dragTargetForm = target;
+            _insertIndex = ReferenceEquals(target, this) ? ComputeInsertIndexAt(client) : -1;
+            Invalidate();
+            return;
+        }
+
+        // 离开所有绳子 → 交给系统拖出（拖到别的应用）。
+        var index = _pressedIndex;
+        _internalDrag = false;
+        _insertIndex = -1;
+        _dragTargetForm = null;
+        _pressedIndex = -1;
+        Invalidate();
+        StartDragOut(index);
+    }
+
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
@@ -396,54 +462,9 @@ public sealed class LeashForm : Form
                 + " loc=" + e.Location);
         }
 
-        if (_pressedIndex < 0 || _dragging)
-        {
-            return;
-        }
-
-        // 不能再用 e.Button 判断"左键还按着吗"：一旦设了 Capture，
-        // MouseMove 的事件源变了，e.Button 会变成 None，导致第二帧就 return，
-        // 表现为"卡片怎么拖都拖不出来"。
-        // Control.MouseButtons 读的是真实按键状态，不受鼠标捕获影响。
-        if ((Control.MouseButtons & MouseButtons.Left) == 0)
-        {
-            _pressedIndex = -1;
-            return;
-        }
-
-        var dragSize = SystemInformation.DragSize;
-        var moved = Math.Abs(e.X - _pressPoint.X) > dragSize.Width || Math.Abs(e.Y - _pressPoint.Y) > dragSize.Height;
-        if (!moved)
-        {
-            return;
-        }
-
-        // 先进入「内部拖拽」：捕获鼠标后即使移出窗口仍能收到 MouseMove，可以实时算插入位置。
-        // DoDragDrop 是同步阻塞的，一旦启动就回不来，所以必须等确定要拖出去才交给 OLE。
-        if (!_internalDrag)
-        {
-            _internalDrag = true;
-            Capture = true;
-        }
-
-        var screenPoint = PointToScreen(e.Location);
-        if (IsOverAnyLeash(screenPoint, out var target))
-        {
-            _dragTargetForm = target;
-            _insertIndex = ReferenceEquals(target, this)
-                ? ComputeInsertIndexAt(e.Location)
-                : -1;
-            Invalidate();
-            return;
-        }
-
-        // 离开所有绳子 → 释放捕获，交给系统拖出（拖到别的应用）。
-        Capture = false;
-        _internalDrag = false;
-        _insertIndex = -1;
-        _dragTargetForm = null;
-        Invalidate();
-        StartDragOut(_pressedIndex);
+        // 拖拽判定已经整体搬到 PollDrag：由 LeashHost 每 tick 用全局光标 + 左键状态驱动。
+        // 这里不再判断、也不再用 Capture —— 实测 Capture 在这个窗口上设不上，
+        // 曾导致"按下命中 hit=1、拖到一半却变成 index=-1"。
     }
 
     protected override void OnMouseDown(MouseEventArgs e)

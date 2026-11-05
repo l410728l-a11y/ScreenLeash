@@ -360,6 +360,12 @@ public sealed class LeashHost : IDisposable
         foreach (var form in _forms)
         {
             form.EvaluateCursor(cursor, leftDown);
+
+            // 拖拽判定走轮询，不依赖鼠标事件，也不依赖 Capture：
+            // 实测 Capture = true 在这个窗口上设不上（WS_EX_NOACTIVATE + TransparencyKey），
+            // 而 Capture 设不上时 OnMouseCaptureChanged 会清掉 _pressedIndex，
+            // 导致"按下明明命中了卡片，拖到一半却变成 -1"。
+            form.PollDrag(cursor, leftDown);
             form.Tick();
             if (form.IsExpanded)
             {
