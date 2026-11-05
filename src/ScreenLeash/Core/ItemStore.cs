@@ -256,6 +256,55 @@ public sealed class ItemStore : IDisposable
     public Task<bool> MoveAsync(Guid id, EdgeKind targetEdge)
         => RunOnUiAsync(() => MoveCore(id, targetEdge));
 
+    /// <summary>
+    /// 拖动排序：把卡片移到 <paramref name="targetEdge"/> 的第 <paramref name="targetIndex"/> 位
+    /// （0 = 最前，超出范围自动夹到末尾）。同边调序与跨边移动都走这一条路径。
+    /// </summary>
+    public Task<bool> MoveToAsync(Guid id, EdgeKind targetEdge, int targetIndex)
+        => RunOnUiAsync(() => MoveToCore(id, targetEdge, targetIndex));
+
+    private bool MoveToCore(Guid id, EdgeKind targetEdge, int targetIndex)
+    {
+        var item = FindCore(id);
+        if (item is null)
+        {
+            return false;
+        }
+
+        var sourceEdge = item.Edge;
+        var sameEdge = sourceEdge.Equals(targetEdge);
+
+        // 目标边现有的顺序（先把自己摘掉，避免自己占一个坑）
+        var ordered = _items
+            .Where(i => i.Edge.Equals(targetEdge) && i.Id != id)
+            .OrderBy(i => i.Order)
+            .ThenBy(i => i.Id)
+            .ToList();
+
+        var index = Math.Clamp(targetIndex, 0, ordered.Count);
+        ordered.Insert(index, item);
+        item.Edge = targetEdge;
+
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            if (ordered[i].Order != i)
+            {
+                ordered[i].Order = i;
+                _dirty = true;
+            }
+        }
+
+        if (!sameEdge)
+        {
+            CompactOrdersCore(sourceEdge);
+        }
+
+        _dirty = true;
+        SaveCore();
+        RaiseChanged();
+        return true;
+    }
+
     /// <summary>记录一次真实使用（拖出/复制/选中时调），驱动 LRU。不立即落盘，由下次写入或 Dispose 刷。</summary>
     public Task TouchAsync(Guid id)
         => RunOnUiAsync(() =>

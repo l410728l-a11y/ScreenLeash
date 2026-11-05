@@ -27,7 +27,10 @@ public static class Metrics
     /// 不贴满整条边——用户要求「左右的上下不要打满」。</summary>
     public const float EdgeSpanRatio = 0.8f;
 
-    /// <summary>**拖拽靠近**时的感应区（DIP）：比普通悬停的 40 更宽，
+    /// <summary>拖动排序时插入指示线的宽度（DIP）。</summary>
+    public const float IndicatorWidth = 3f;
+
+    /// <summary>拖拽靠近时的感应区（DIP）：比普通悬停的 40 更宽，
     /// 让用户拖东西时有足够空间提前看到「能放这里」的底框，而不是必须贴到边上。</summary>
     public const int DragApproachZone = 90;
 

@@ -40,6 +40,15 @@ public sealed class LeashForm : Form
 
     /// <summary>外部正拖东西靠近（还没进窗口）：据此画落点底框。纯悬停查看时为 false，不画框。</summary>
     private bool _dragApproach;
+
+    /// <summary>正在做"绳子内部拖动排序"（未交给 OLE）。</summary>
+    private bool _internalDrag;
+
+    /// <summary>内部拖动时的插入位置（同边排序用；-1 = 跨边或无效）。</summary>
+    private int _insertIndex = -1;
+
+    /// <summary>内部拖动时悬停到的目标绳子（跨边排序用）。</summary>
+    private LeashForm? _dragTargetForm;
     private float _lastOpacity = Metrics.CollapsedOpacity;
 
     /// <summary>悬停放大预览的延迟定时器：停够 <see cref="Metrics.PreviewDelayMs"/> 才弹，避免划过就闪。</summary>
@@ -257,6 +266,48 @@ public sealed class LeashForm : Form
 
             CardRenderer.Draw(g, slot.Bounds, items[slot.Index], Dpi, slot.Index == _hoverIndex, _thumbnails, _paths);
         }
+
+        DrawInsertIndicator(g, client);
+    }
+
+    /// <summary>拖动排序时画一条插入指示线，告诉用户松手后会插到哪里。</summary>
+    private void DrawInsertIndicator(Graphics g, Rectangle client)
+    {
+        if (!_internalDrag || _insertIndex < 0)
+        {
+            return;
+        }
+
+        var items = _store.ForEdge(Edge);
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        var slots = EdgeLayout.Compose(Edge, client, Dpi, items.Count, _scrollPx);
+        var horizontal = EdgeLayout.IsHorizontal(Edge);
+
+        int pos;
+        if (_insertIndex < slots.Count)
+        {
+            var bounds = slots[_insertIndex].Bounds;
+            pos = horizontal ? bounds.Left : bounds.Top;
+        }
+        else
+        {
+            var last = slots[slots.Count - 1].Bounds;
+            pos = horizontal ? last.Right : last.Bottom;
+        }
+
+        using var pen = new Pen(Theme.CardBorderActive, Metrics.PxFloat(Metrics.IndicatorWidth, Dpi));
+        if (horizontal)
+        {
+            g.DrawLine(pen, pos, client.Top, pos, client.Bottom);
+        }
+        else
+        {
+            g.DrawLine(pen, client.Left, pos, client.Right, pos);
+        }
     }
 
     /// <summary>
@@ -319,10 +370,38 @@ public sealed class LeashForm : Form
         }
 
         var dragSize = SystemInformation.DragSize;
-        if (Math.Abs(e.X - _pressPoint.X) > dragSize.Width || Math.Abs(e.Y - _pressPoint.Y) > dragSize.Height)
+        var moved = Math.Abs(e.X - _pressPoint.X) > dragSize.Width || Math.Abs(e.Y - _pressPoint.Y) > dragSize.Height;
+        if (!moved)
         {
-            StartDragOut(_pressedIndex);
+            return;
         }
+
+        // 先进入「内部拖拽」：捕获鼠标后即使移出窗口仍能收到 MouseMove，可以实时算插入位置。
+        // DoDragDrop 是同步阻塞的，一旦启动就回不来，所以必须等确定要拖出去才交给 OLE。
+        if (!_internalDrag)
+        {
+            _internalDrag = true;
+            Capture = true;
+        }
+
+        var screenPoint = PointToScreen(e.Location);
+        if (IsOverAnyLeash(screenPoint, out var target))
+        {
+            _dragTargetForm = target;
+            _insertIndex = ReferenceEquals(target, this)
+                ? ComputeInsertIndexAt(e.Location)
+                : -1;
+            Invalidate();
+            return;
+        }
+
+        // 离开所有绳子 → 释放捕获，交给系统拖出（拖到别的应用）。
+        Capture = false;
+        _internalDrag = false;
+        _insertIndex = -1;
+        _dragTargetForm = null;
+        Invalidate();
+        StartDragOut(_pressedIndex);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -349,7 +428,86 @@ public sealed class LeashForm : Form
     {
         base.OnMouseUp(e);
 
+        if (_internalDrag)
+        {
+            CommitInternalDrag();
+        }
+
+        Capture = false;
+        _internalDrag = false;
+        _insertIndex = -1;
+        _dragTargetForm = null;
         _pressedIndex = -1;
+        Invalidate();
+    }
+
+    /// <summary>
+    /// 鼠标捕获被系统抢走（Alt+Tab、Esc、别的窗口抢捕获）时，
+    /// 必须清掉内部拖拽状态——否则 _internalDrag 会一直为 true，
+    /// 下次点击会莫名其妙地提交一次"排序"。
+    /// </summary>
+    protected override void OnMouseCaptureChanged(EventArgs e)
+    {
+        base.OnMouseCaptureChanged(e);
+
+        if (!Capture && _internalDrag)
+        {
+            _internalDrag = false;
+            _insertIndex = -1;
+            _dragTargetForm = null;
+            _pressedIndex = -1;
+            Invalidate();
+        }
+    }
+
+    /// <summary>光标是否落在任意一条绳子窗口上（跨边排序需要看到对侧窗口）。</summary>
+    private static bool IsOverAnyLeash(Point screenPoint, out LeashForm? target)
+    {
+        foreach (Form form in Application.OpenForms)
+        {
+            if (form is LeashForm leash && leash.Visible && leash.Bounds.Contains(screenPoint))
+            {
+                target = leash;
+                return true;
+            }
+        }
+
+        target = null;
+        return false;
+    }
+
+    private int ComputeInsertIndexAt(Point clientPoint)
+    {
+        var items = _store.ForEdge(Edge);
+        if (items.Count == 0)
+        {
+            return 0;
+        }
+
+        var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items.Count, _scrollPx);
+        return EdgeLayout.ComputeInsertIndex(slots, clientPoint, EdgeLayout.IsHorizontal(Edge));
+    }
+
+    /// <summary>松手：同边插入到指定位置；跨边追加到对侧末尾。</summary>
+    private void CommitInternalDrag()
+    {
+        var items = _store.ForEdge(Edge);
+        if (_pressedIndex < 0 || _pressedIndex >= items.Count)
+        {
+            return;
+        }
+
+        var item = items[_pressedIndex];
+
+        if (_dragTargetForm is null || ReferenceEquals(_dragTargetForm, this))
+        {
+            var target = _insertIndex < 0 ? items.Count : _insertIndex;
+            _ = _store.MoveToAsync(item.Id, Edge, target);
+        }
+        else
+        {
+            _ = _store.MoveToAsync(item.Id, _dragTargetForm.Edge, int.MaxValue);
+        }
     }
 
     protected override void OnMouseLeave(EventArgs e)

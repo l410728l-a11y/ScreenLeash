@@ -103,6 +103,37 @@ public static class EdgeLayout
         return result;
     }
 
+    /// <summary>
+    /// 拖动排序时算「插入到第几个位置」（0..count）。纯函数、可单测。
+    /// 规则：从左/上往右/下扫，光标落在某张卡片**中心之前**就插在它前面；都不满足则插到末尾。
+    /// </summary>
+    /// <param name="slots">当前布局（<see cref="Compose"/> 的结果）。</param>
+    /// <param name="point">光标位置（窗口客户区坐标）。</param>
+    /// <param name="horizontal">true = 横向排列（上下边）。</param>
+    public static int ComputeInsertIndex(IReadOnlyList<CardSlot> slots, Point point, bool horizontal)
+    {
+        if (slots is null || slots.Count == 0)
+        {
+            return 0;
+        }
+
+        for (var i = 0; i < slots.Count; i++)
+        {
+            var bounds = slots[i].Bounds;
+            var center = horizontal
+                ? bounds.Left + (bounds.Width >> 1)
+                : bounds.Top + (bounds.Height >> 1);
+            var cursor = horizontal ? point.X : point.Y;
+
+            if (cursor < center)
+            {
+                return i;
+            }
+        }
+
+        return slots.Count;
+    }
+
     /// <summary>命中的卡片下标；未命中返回 -1。</summary>
     public static int HitTest(IReadOnlyList<CardSlot> slots, Point point)
     {
