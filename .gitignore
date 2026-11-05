@@ -1,0 +1,42 @@
+# ---- .NET 构建产物 ----
+bin/
+obj/
+publish/
+artifacts/
+TestResults/
+*.binlog
+*.trx
+
+# ---- IDE / 工具 ----
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ---- 运行时数据 ----
+*.log
+crash-*.log
+leash-out-*
+
+# ---- Rivet 本地缓存（知识包约束：不得提交） ----
+.rivet/knowledge/memory.jsonl
+.rivet/knowledge/*.sqlite
+.rivet/knowledge/*.sqlite-*
+.rivet/scratch/**/bin/
+.rivet/scratch/**/obj/
+.rivet/scratch/trytest/
+
+# ---- 天枢运行时状态（星流/检查点/记忆库，不随产品走） ----
+.rivet/starflow/
+.rivet/checkpoints/
+.rivet/meridian.db
+.rivet/meridian.db-shm
+.rivet/meridian.db-wal
+
+# ---- OS ----
+Thumbs.db
+Desktop.ini
+.DS_Store

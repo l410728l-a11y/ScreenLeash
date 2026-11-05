@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <RootNamespace>ScreenLeash</RootNamespace>
+    <AssemblyName>ScreenLeash</AssemblyName>
+    <Product>ScreenLeash</Product>
+    <Description>常驻屏幕边缘的绳子挂件：把截图、图片或一句话挂到屏幕四边，需要时再拖出来。</Description>
+    <Version>0.1.0-alpha</Version>
+    <NeutralLanguage>zh-Hans</NeutralLanguage>
+
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!--
+      app.manifest 与 ApplicationHighDpiMode 同时声明 PerMonitorV2 是有意的双保险：
+      manifest 在进程创建时即生效（早于任何托管代码），ApplicationConfiguration.Initialize()
+      再按项目属性设置同一模式。两条路径取值一致，WFAC010 的“重复声明”提示已被此决定覆盖。
+    -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+</Project>
