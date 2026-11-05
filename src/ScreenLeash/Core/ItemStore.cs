@@ -298,6 +298,45 @@ public sealed class ItemStore : IDisposable
     /// 启动时的孤儿清理：blobs/ 与 thumbs/ 中无任何 Item 引用的文件、以及上次崩溃残留的 *.tmp 全部删除。
     /// 返回删除的文件数。
     /// </summary>
+    /// <summary>
+    /// 一次性兼容升级：旧版本把图片文件一律存成了 <see cref="Kind.File"/>（thumbName 为 null），
+    /// 卡片区只画文件名。这里把它们原地转成 <see cref="Kind.Image"/> 并补缩略图——
+    /// blob 内容不变，只是让预览能显示出来。返回被升级的卡片数。
+    /// </summary>
+    public Task<int> UpgradeImageFileItemsAsync(CancellationToken cancellationToken = default)
+        => RunOnUiAsync(() =>
+        {
+            var upgraded = 0;
+            foreach (var item in _items)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (item.Kind != Kind.File || !item.HasBlob || !IsImageFile(item.BlobName))
+                {
+                    continue;
+                }
+
+                var blobFull = _paths.BlobPath(item.BlobName);
+                if (blobFull is null || !File.Exists(blobFull))
+                {
+                    continue;
+                }
+
+                item.Kind = Kind.Image;
+                item.ThumbName = BuildThumbnailCore(blobFull);
+                _dirty = true;
+                upgraded++;
+            }
+
+            if (upgraded > 0)
+            {
+                SaveCore();
+                RaiseChanged();
+            }
+
+            return upgraded;
+        });
+
     public async Task<int> CleanupOrphansAsync(CancellationToken cancellationToken = default)
     {
         _paths.EnsureCreated();

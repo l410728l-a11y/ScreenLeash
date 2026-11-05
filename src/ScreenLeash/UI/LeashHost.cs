@@ -64,7 +64,7 @@ public sealed class LeashHost : IDisposable
         _timer.Start();
 
         // 孤儿清理（blobs/thumbs 中无引用文件）放到后台，别拖慢启动。
-        _ = _store.CleanupOrphansAsync();
+        _ = InitializeStoreAsync();
 
         // 全局粘贴钩子的**唯一**启动点：PasteHookEnabled 在整个程序里只在这里被读一次。
         // 不在这里装，用户勾了「Ctrl+V 兜底」也永远不会生效（设置字段本身零读取点）。
@@ -255,6 +255,36 @@ public sealed class LeashHost : IDisposable
         _settings.PasteHookEnabled = false;
         _settings.Save(_paths);
         return true;
+    }
+
+    /// <summary>
+    /// 启动时的数据维护，顺序不能反：先升级旧图片卡片（生成缩略图并写回 items.json），
+    /// 再清理孤儿文件——清理是按 items.json 的引用扫 thumbs/ 的，迁移产物必须先入库，
+    /// 否则刚生成的缩略图会被当成孤儿删掉。
+    /// </summary>
+    private async Task InitializeStoreAsync()
+    {
+        try
+        {
+            var upgraded = await _store.UpgradeImageFileItemsAsync().ConfigureAwait(true);
+            if (upgraded > 0)
+            {
+                Program.Notify("已为旧图片补上预览", upgraded + " 张");
+            }
+        }
+        catch (Exception ex)
+        {
+            Program.WriteCrashLog(ex, fatal: false);
+        }
+
+        try
+        {
+            await _store.CleanupOrphansAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Program.WriteCrashLog(ex, fatal: false);
+        }
     }
 
     private int CursorDpi()
