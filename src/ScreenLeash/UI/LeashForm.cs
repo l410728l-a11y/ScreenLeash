@@ -464,6 +464,12 @@ public sealed class LeashForm : Form
 
         _pressPoint = e.Location;
         _pressedIndex = HitIndex(e.Location);
+
+        // 这次拖动为什么没起来，关键就看这一行：
+        // OnMouseDown 有没有被调用（窗口是 TransparencyKey + NOACTIVATE，可能收不到）、
+        // 以及 HitIndex 命中的是几号（-1 = 没命中卡片）。
+        DragDiag("MouseDown loc=" + e.Location + " hit=" + _pressedIndex
+            + " client=" + ClientRectangle + " count=" + _store.ForEdge(Edge).Count);
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
@@ -846,6 +852,9 @@ public sealed class LeashForm : Form
     protected override void OnDragDrop(DragEventArgs drgevent)
     {
         base.OnDragDrop(drgevent);
+
+        DragDiag("DragDrop isDragging=" + DragOut.IsDragging
+            + " hasFileDrop=" + (drgevent.Data?.GetDataPresent(DataFormats.FileDrop) == true));
 
         // 自己拖出的卡片落到绳子上 = **移动**：拖到对侧就换边，拖回原边则无操作。
         // 绝不能走下面的「拖入」路径，否则会复制一份 blob，名字也变成 GUID。
