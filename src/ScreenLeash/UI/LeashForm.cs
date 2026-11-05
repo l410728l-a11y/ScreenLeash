@@ -384,18 +384,20 @@ public sealed class LeashForm : Form
             Capture = true;
         }
 
-        var screenPoint = PointToScreen(e.Location);
-        if (IsOverAnyLeash(screenPoint, out var target))
+        // 只有光标**还在卡片上**才算内部排序；一旦离开卡片（哪怕还留在窗口展开区里）
+        // 就立刻交给 OLE。否则用户从卡片往外拖时，要走出整个展开区（140dip）才算离开，
+        // 中途一直被当成内部排序，结果就是"卡片拖不到外面"。
+        var items = _store.ForEdge(Edge);
+        var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items.Count, _scrollPx);
+        if (EdgeLayout.HitTest(slots, e.Location) >= 0)
         {
-            _dragTargetForm = target;
-            _insertIndex = ReferenceEquals(target, this)
-                ? ComputeInsertIndexAt(e.Location)
-                : -1;
+            _dragTargetForm = this;
+            _insertIndex = ComputeInsertIndexAt(e.Location);
             Invalidate();
             return;
         }
 
-        // 离开所有绳子 → 释放捕获，交给系统拖出（拖到别的应用）。
+        // 离开卡片 → 释放捕获，交给系统拖出（拖到别的应用）。
         Capture = false;
         _internalDrag = false;
         _insertIndex = -1;
