@@ -100,8 +100,9 @@ public static class Metrics
     /// <summary>UI 线程唯一的显隐/缓动 timer 间隔（毫秒）。</summary>
     public const int AnimIntervalMs = 150;
 
-    /// <summary>缓动除数：每 tick 移动距离 = max(MinEaseStep, |Δ| / EaseDivisor)。</summary>
-    public const int EaseDivisor = 3;
+    /// <summary>缓动除数：每 tick 移动距离 = max(MinEaseStep, |Δ| / EaseDivisor)。
+    /// 2 比 3 收敛更快：134dip 的展开从约 8 帧降到 5 帧。</summary>
+    public const int EaseDivisor = 2;
 
     /// <summary>单次缓动的最小步长（DIP）。</summary>
     public const int MinEaseStep = 8;
@@ -109,8 +110,9 @@ public static class Metrics
     /// <summary>溢出内容的滚轮单步滚动量（DIP）。</summary>
     public const int ScrollStep = 40;
 
-    /// <summary>光标位置探测间隔（毫秒），与 <see cref="AnimIntervalMs"/> 同源驱动。</summary>
-    public const int CursorProbeIntervalMs = 120;
+    /// <summary>光标位置探测间隔（毫秒）。40ms 是「弹出跟手」与「空闲开销」的折中：
+    /// 120ms 时展开动画要 8-9 帧、约 1 秒才到底，用户感知为卡顿。</summary>
+    public const int CursorProbeIntervalMs = 40;
 
     // ── 透明度 ───────────────────────────────────────────────────
     /// <summary>收起态窗口不透明度。</summary>

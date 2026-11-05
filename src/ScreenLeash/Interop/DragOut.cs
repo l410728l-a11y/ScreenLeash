@@ -57,28 +57,49 @@ public static class DragOut
 
         try
         {
-            // ── FileDrop ──
-            var filePath = ResolveFilePath(item, paths, tempFiles);
-            if (filePath is not null)
+            // 按卡片类型**只给一种**格式：多格式并给等于把选择权交给目标程序，
+            // 微信/QQ 会优先取 FileDrop 里的临时 .txt，把一段文字变成"打不开的文件"。
+            // 用户要求：拖进去是什么，拖出来就是什么。
+            switch (item.Kind)
             {
-                data.SetData(DataFormats.FileDrop, new[] { filePath });
-            }
+                case Kind.Text:
+                    // 纯文字：只给 UnicodeText，任何编辑器/聊天框拿到的都是文字。
+                    if (!string.IsNullOrEmpty(item.Text))
+                    {
+                        data.SetData(DataFormats.UnicodeText, item.Text);
+                    }
 
-            // ── UnicodeText ──
-            var text = ResolveText(item);
-            if (!string.IsNullOrEmpty(text))
-            {
-                data.SetData(DataFormats.UnicodeText, text);
-            }
+                    break;
 
-            // ── Bitmap ──
-            if (item.Kind == Kind.Image && thumbnails is not null)
-            {
-                ownedBitmap = TryLoadBitmap(paths.ThumbPath(item.ThumbName), thumbnails);
-                if (ownedBitmap is not null)
-                {
-                    data.SetData(DataFormats.Bitmap, ownedBitmap);
-                }
+                case Kind.Image:
+                    // 图片：FileDrop 给真实图片文件（拖到桌面=复制文件、拖到微信=发图），
+                    // Bitmap 作为不接受文件目标的兜底。
+                    var imagePath = ResolveFilePath(item, paths, tempFiles);
+                    if (imagePath is not null)
+                    {
+                        data.SetData(DataFormats.FileDrop, new[] { imagePath });
+                    }
+
+                    if (thumbnails is not null)
+                    {
+                        ownedBitmap = TryLoadBitmap(paths.ThumbPath(item.ThumbName), thumbnails);
+                        if (ownedBitmap is not null)
+                        {
+                            data.SetData(DataFormats.Bitmap, ownedBitmap);
+                        }
+                    }
+
+                    break;
+
+                default:
+                    // 文件：只给 FileDrop，拖出去就是一个文件。
+                    var filePath = ResolveFilePath(item, paths, tempFiles);
+                    if (filePath is not null)
+                    {
+                        data.SetData(DataFormats.FileDrop, new[] { filePath });
+                    }
+
+                    break;
             }
 
             if (data.GetFormats().Length == 0)

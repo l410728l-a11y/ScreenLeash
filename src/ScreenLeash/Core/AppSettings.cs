@@ -14,7 +14,7 @@ namespace ScreenLeash.Core;
 /// </summary>
 public sealed class AppSettings
 {
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
 
     public const string StartupRegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     public const string StartupValueName = "ScreenLeash";
@@ -30,11 +30,13 @@ public sealed class AppSettings
     // ── 绳子 ─────────────────────────────────────────────────────
     public bool EnableLeft { get; set; } = true;
 
-    public bool EnableTop { get; set; } = true;
+    /// <summary>上边默认关闭：用户反馈顶边细线会干扰"点文件"等贴顶操作。</summary>
+    public bool EnableTop { get; set; }
 
     public bool EnableRight { get; set; } = true;
 
-    public bool EnableBottom { get; set; } = true;
+    /// <summary>下边默认关闭：同顶边，贴底的任务栏/托盘区域容易被这条细线挡住。</summary>
+    public bool EnableBottom { get; set; }
 
     /// <summary>只显示主屏的四条绳；多屏时默认每屏各四条。</summary>
     public bool OnlyPrimaryScreen { get; set; }
@@ -124,6 +126,15 @@ public sealed class AppSettings
             if (loaded is null || loaded.Version < 1 || loaded.Version > SchemaVersion)
             {
                 return new AppSettings();
+            }
+
+            // v1 → v2 迁移：v1 默认四边全开，用户反馈上下边的细线会挡住贴边操作（如点文件）。
+            // 只在首次升级时改一次；之后用户手动开启的不再覆盖。
+            if (loaded.Version < 2)
+            {
+                loaded.EnableTop = false;
+                loaded.EnableBottom = false;
+                loaded.Version = SchemaVersion;
             }
 
             loaded.Normalize();

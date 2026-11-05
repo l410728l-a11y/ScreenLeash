@@ -273,6 +273,13 @@ public sealed class LeashForm : Form
     {
         base.OnMouseDown(e);
 
+        // 右键卡片 = 删除。绳子窗口没有焦点、也没有菜单栏，右键是最直接的移除入口。
+        if (e.Button == MouseButtons.Right)
+        {
+            DeleteAt(HitIndex(e.Location));
+            return;
+        }
+
         if (e.Button != MouseButtons.Left)
         {
             return;
@@ -338,6 +345,32 @@ public sealed class LeashForm : Form
 
         var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items.Count, _scrollPx);
         return EdgeLayout.HitTest(slots, location);
+    }
+
+    /// <summary>右键删除该位置的卡片（绳子窗口无焦点、无菜单栏，右键是最直接的移除入口）。</summary>
+    private async void DeleteAt(int index)
+    {
+        if (index < 0)
+        {
+            return;
+        }
+
+        var items = _store.ForEdge(Edge);
+        if (index >= items.Count)
+        {
+            return;
+        }
+
+        var item = items[index];
+        try
+        {
+            await _store.RemoveAsync(item.Id).ConfigureAwait(true);
+            Program.Notify("已从绳子移除", CardRenderer.Describe(item));
+        }
+        catch (Exception ex)
+        {
+            Program.WriteCrashLog(ex, fatal: false);
+        }
     }
 
     private void StartDragOut(int index)

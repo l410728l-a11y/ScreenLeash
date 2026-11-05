@@ -180,6 +180,16 @@ public sealed class ItemStore : IDisposable
     /// <summary>
     /// 文件卡片：调用线程把原文件复制进 blobs（保留扩展名），UI 线程提交元数据。
     /// </summary>
+    /// <summary>会被当作图片处理的扩展名（大小写不敏感）。</summary>
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".tif", ".tiff",
+    };
+
+    /// <summary>该路径看起来是图片吗（按扩展名判断，实际解码交给缩略图生成器）。</summary>
+    public static bool IsImageFile(string? path) =>
+        !string.IsNullOrEmpty(path) && ImageExtensions.Contains(Path.GetExtension(path));
+
     public async Task<Item> AddFileAsync(string sourcePath, EdgeKind edge, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
@@ -199,12 +209,19 @@ public sealed class ItemStore : IDisposable
         await Task.Run(() => File.Copy(sourcePath, blobFull, overwrite: true), cancellationToken).ConfigureAwait(false);
         var byteSize = new FileInfo(blobFull).Length;
 
+        var isImage = IsImageFile(sourcePath);
         try
         {
             return await RunOnUiAsync(() =>
             {
-                var item = Item.CreateFile(blobName, thumbName: null, byteSize, edge);
-                return CommitAddCore(item);
+                if (isImage)
+                {
+                    // 图片文件必须走 Image 卡片：生成缩略图，卡片区才会显示预览而不是文件名。
+                    var thumbName = BuildThumbnailCore(blobFull);
+                    return CommitAddCore(Item.CreateImage(blobName, thumbName, byteSize, edge));
+                }
+
+                return CommitAddCore(Item.CreateFile(blobName, thumbName: null, byteSize, edge));
             }).ConfigureAwait(false);
         }
         catch
