@@ -50,14 +50,35 @@ public static class EdgeGeometry
             thickness = extent;
         }
 
+        var (alongStart, alongSpan) = AlongEdge(edge, workingArea);
         return edge switch
         {
-            EdgeKind.Left => new Rectangle(workingArea.Left, workingArea.Top, thickness, workingArea.Height),
-            EdgeKind.Right => new Rectangle(workingArea.Right - thickness, workingArea.Top, thickness, workingArea.Height),
-            EdgeKind.Top => new Rectangle(workingArea.Left, workingArea.Top, workingArea.Width, thickness),
-            EdgeKind.Bottom => new Rectangle(workingArea.Left, workingArea.Bottom - thickness, workingArea.Width, thickness),
+            EdgeKind.Left => new Rectangle(workingArea.Left, alongStart, thickness, alongSpan),
+            EdgeKind.Right => new Rectangle(workingArea.Right - thickness, alongStart, thickness, alongSpan),
+            EdgeKind.Top => new Rectangle(alongStart, workingArea.Top, alongSpan, thickness),
+            EdgeKind.Bottom => new Rectangle(alongStart, workingArea.Bottom - thickness, alongSpan, thickness),
             _ => throw new ArgumentOutOfRangeException(nameof(edge), edge, "未知的边。"),
         };
+    }
+
+    /// <summary>
+    /// 沿边方向的占位：只占工作区的 <see cref="Metrics.EdgeSpanRatio"/>，居中，两边留白。
+    /// 返回 (起点, 长度)：左右边是 Y 方向，上下边是 X 方向。
+    /// 窗口矩形、动画中间态、触发带三处必须用同一个算法，否则光标判定会和"看得见的绳"对不上。
+    /// </summary>
+    private static (int Start, int Length) AlongEdge(EdgeKind edge, Rectangle workingArea)
+    {
+        var vertical = edge is EdgeKind.Left or EdgeKind.Right;
+        var total = vertical ? workingArea.Height : workingArea.Width;
+        var origin = vertical ? workingArea.Top : workingArea.Left;
+
+        var span = Math.Max(1, (int)Math.Round(total * Metrics.EdgeSpanRatio));
+        if (span > total)
+        {
+            span = total;
+        }
+
+        return (origin + ((total - span) >> 1), span);
     }
 
     /// <summary>
@@ -73,12 +94,13 @@ public static class EdgeGeometry
         int extent = vertical ? workingArea.Width : workingArea.Height;
         int thickness = Math.Clamp(thicknessPx, 0, extent);
 
+        var (alongStart, alongSpan) = AlongEdge(edge, workingArea);
         return edge switch
         {
-            EdgeKind.Left => new Rectangle(workingArea.Left, workingArea.Top, thickness, workingArea.Height),
-            EdgeKind.Right => new Rectangle(workingArea.Right - thickness, workingArea.Top, thickness, workingArea.Height),
-            EdgeKind.Top => new Rectangle(workingArea.Left, workingArea.Top, workingArea.Width, thickness),
-            EdgeKind.Bottom => new Rectangle(workingArea.Left, workingArea.Bottom - thickness, workingArea.Width, thickness),
+            EdgeKind.Left => new Rectangle(workingArea.Left, alongStart, thickness, alongSpan),
+            EdgeKind.Right => new Rectangle(workingArea.Right - thickness, alongStart, thickness, alongSpan),
+            EdgeKind.Top => new Rectangle(alongStart, workingArea.Top, alongSpan, thickness),
+            EdgeKind.Bottom => new Rectangle(alongStart, workingArea.Bottom - thickness, alongSpan, thickness),
             _ => throw new ArgumentOutOfRangeException(nameof(edge), edge, "未知的边。"),
         };
     }
@@ -90,10 +112,12 @@ public static class EdgeGeometry
     public static bool IsCursorInTriggerZone(EdgeKind edge, Rectangle workingArea, int dpi, Point cursor)
     {
         int zone = Metrics.Px(Metrics.EdgeTriggerZone, dpi);
+        var (alongStart, alongSpan) = AlongEdge(edge, workingArea);
+        var alongEnd = alongStart + alongSpan;
         bool insideAlong = edge switch
         {
-            EdgeKind.Left or EdgeKind.Right => cursor.Y >= workingArea.Top && cursor.Y < workingArea.Bottom,
-            EdgeKind.Top or EdgeKind.Bottom => cursor.X >= workingArea.Left && cursor.X < workingArea.Right,
+            EdgeKind.Left or EdgeKind.Right => cursor.Y >= alongStart && cursor.Y < alongEnd,
+            EdgeKind.Top or EdgeKind.Bottom => cursor.X >= alongStart && cursor.X < alongEnd,
             _ => throw new ArgumentOutOfRangeException(nameof(edge), edge, "未知的边。"),
         };
 

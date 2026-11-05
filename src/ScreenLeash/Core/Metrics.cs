@@ -23,6 +23,10 @@ public static class Metrics
     /// <summary>光标进入距边多少 DIP 内视为「拖近/靠近」触发弹出。</summary>
     public const int EdgeTriggerZone = 40;
 
+    /// <summary>绳子沿边方向占工作区的比例（0..1）。0.8 = 上下（左右边则为上下）各留 10%，
+    /// 不贴满整条边——用户要求「左右的上下不要打满」。</summary>
+    public const float EdgeSpanRatio = 0.8f;
+
     // ── 卡片 ─────────────────────────────────────────────────────
     /// <summary>卡片圆角半径（DIP）。</summary>
     public const int CardRadius = 10;

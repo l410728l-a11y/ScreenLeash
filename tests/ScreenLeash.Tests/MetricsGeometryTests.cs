@@ -42,12 +42,15 @@ public class MetricsGeometryTests
     public void Compute_CollapsedSticksToEdge_ExpandedGrowsInward()
     {
         var area = new Rectangle(0, 0, 1920, 1040);
+        // 沿边只占工作区的 80% 并居中：1040 * 0.8 = 832，上下各留 104。
+        const int span = 832;
+        const int offset = 104;
 
         var collapsed = EdgeGeometry.Compute(EdgeKind.Right, area, 96, LeashVisualState.Idle);
-        Assert.Equal(new Rectangle(1920 - Metrics.CollapsedThickness, 0, Metrics.CollapsedThickness, 1040), collapsed);
+        Assert.Equal(new Rectangle(1920 - Metrics.CollapsedThickness, offset, Metrics.CollapsedThickness, span), collapsed);
 
         var expanded = EdgeGeometry.Compute(EdgeKind.Right, area, 96, LeashVisualState.Hover);
-        Assert.Equal(new Rectangle(1920 - Metrics.ExpandedThickness, 0, Metrics.ExpandedThickness, 1040), expanded);
+        Assert.Equal(new Rectangle(1920 - Metrics.ExpandedThickness, offset, Metrics.ExpandedThickness, span), expanded);
 
         var dragging = EdgeGeometry.Compute(EdgeKind.Right, area, 96, LeashVisualState.Dragging);
         Assert.Equal(expanded, dragging);
@@ -58,11 +61,17 @@ public class MetricsGeometryTests
     {
         var area = new Rectangle(100, 50, 800, 600);
         int t = Metrics.CollapsedThickness;
+        // 纵向 span = 600*0.8 = 480，起点 50 + (600-480)/2 = 110
+        // 横向 span = 800*0.8 = 640，起点 100 + (800-640)/2 = 180
+        const int verticalSpan = 480;
+        const int verticalStart = 110;
+        const int horizontalSpan = 640;
+        const int horizontalStart = 180;
 
-        Assert.Equal(new Rectangle(area.Left, area.Top, t, area.Height), EdgeGeometry.Compute(EdgeKind.Left, area, 96, LeashVisualState.Idle));
-        Assert.Equal(new Rectangle(area.Right - t, area.Top, t, area.Height), EdgeGeometry.Compute(EdgeKind.Right, area, 96, LeashVisualState.Idle));
-        Assert.Equal(new Rectangle(area.Left, area.Top, area.Width, t), EdgeGeometry.Compute(EdgeKind.Top, area, 96, LeashVisualState.Idle));
-        Assert.Equal(new Rectangle(area.Left, area.Bottom - t, area.Width, t), EdgeGeometry.Compute(EdgeKind.Bottom, area, 96, LeashVisualState.Idle));
+        Assert.Equal(new Rectangle(area.Left, verticalStart, t, verticalSpan), EdgeGeometry.Compute(EdgeKind.Left, area, 96, LeashVisualState.Idle));
+        Assert.Equal(new Rectangle(area.Right - t, verticalStart, t, verticalSpan), EdgeGeometry.Compute(EdgeKind.Right, area, 96, LeashVisualState.Idle));
+        Assert.Equal(new Rectangle(horizontalStart, area.Top, horizontalSpan, t), EdgeGeometry.Compute(EdgeKind.Top, area, 96, LeashVisualState.Idle));
+        Assert.Equal(new Rectangle(horizontalStart, area.Bottom - t, horizontalSpan, t), EdgeGeometry.Compute(EdgeKind.Bottom, area, 96, LeashVisualState.Idle));
     }
 
     [Fact]
@@ -106,7 +115,9 @@ public class MetricsGeometryTests
     {
         var area = new Rectangle(0, 0, 1920, 1080);
 
-        Assert.Equal(EdgeKind.Left, EdgeGeometry.HitEdge(area, 96, new Point(1, 1)));
+        // 沿边只占 80%（1080*0.8=864，上下各留 108）：屏幕最上/最下的 10% 不再属于触发带。
+        Assert.Equal(EdgeKind.Left, EdgeGeometry.HitEdge(area, 96, new Point(1, 200)));
+        Assert.Null(EdgeGeometry.HitEdge(area, 96, new Point(1, 1)));
         Assert.Equal(EdgeKind.Right, EdgeGeometry.HitEdge(area, 96, new Point(1918, 500)));
         Assert.Null(EdgeGeometry.HitEdge(area, 96, new Point(960, 540)));
     }
@@ -144,8 +155,9 @@ public class MetricsGeometryTests
         var bLeft = slots.Single(s => s.Screen.DeviceName == "B" && s.Edge == EdgeKind.Left);
         var aLeft = slots.Single(s => s.Screen.DeviceName == "A" && s.Edge == EdgeKind.Left);
 
-        Assert.Equal(new Rectangle(1920, 0, Metrics.Px(Metrics.CollapsedThickness, 144), 1400), bLeft.Bounds(LeashVisualState.Idle));
-        Assert.Equal(new Rectangle(0, 0, Metrics.CollapsedThickness, 1040), aLeft.Bounds(LeashVisualState.Idle));
+        // 沿边 80% 居中：B 屏 1400*0.8=1120 起于 140；A 屏 1040*0.8=832 起于 104。
+        Assert.Equal(new Rectangle(1920, 140, Metrics.Px(Metrics.CollapsedThickness, 144), 1120), bLeft.Bounds(LeashVisualState.Idle));
+        Assert.Equal(new Rectangle(0, 104, Metrics.CollapsedThickness, 832), aLeft.Bounds(LeashVisualState.Idle));
         Assert.Equal(Metrics.Px(Metrics.ExpandedThickness, 144), bLeft.Bounds(LeashVisualState.Hover).Width);
     }
 
