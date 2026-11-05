@@ -905,11 +905,44 @@ public sealed class LeashForm : Form
             return;
         }
 
+        // 必须在事件内**同步**把数据抓成本地副本：
+        // DragDrop 返回后，拖放源（尤其微信这类 COM 数据源）不再有义务提供数据，
+        // 异步方法里再读只能拿到 null —— 表现就是"拖进来了、拖放指针也变了，但没挂上"。
+        // 微信草稿文字正好给的是 System.String|UnicodeText|Text 这种需要实时取值的格式，
+        // 所以只有它复现，已发出的消息（可能带 FileDrop）不受影响。
+        var data = SnapshotData(drgevent.Data);
+
         _dropTarget = false;
         drgevent.Effect = DragDropEffects.Copy;
-
-        var data = drgevent.Data;
         _ = HandleDropAsync(data);
+    }
+
+    /// <summary>把拖放数据抓成本地副本，避免离开 DragDrop 事件后数据源失效。</summary>
+    private static IDataObject SnapshotData(IDataObject? source)
+    {
+        var snapshot = new DataObject();
+        if (source is null)
+        {
+            return snapshot;
+        }
+
+        foreach (var format in source.GetFormats())
+        {
+            try
+            {
+                var value = source.GetData(format);
+                if (value is not null)
+                {
+                    snapshot.SetData(format, value);
+                }
+            }
+            catch
+            {
+                // 个别格式读不到就跳过，不影响其他格式。
+            }
+        }
+
+        return snapshot;
     }
 
     private async Task HandleDropAsync(IDataObject? data)
