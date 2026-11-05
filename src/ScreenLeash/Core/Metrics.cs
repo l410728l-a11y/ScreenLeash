@@ -27,6 +27,9 @@ public static class Metrics
     /// 不贴满整条边——用户要求「左右的上下不要打满」。</summary>
     public const float EdgeSpanRatio = 0.8f;
 
+    /// <summary>拖放诊断日志采样次数（只打前几次 Move，够定位又不刷屏）。</summary>
+    public const int DiagMoveSamples = 6;
+
     /// <summary>拖动排序时插入指示线的宽度（DIP）。</summary>
     public const float IndicatorWidth = 3f;
 

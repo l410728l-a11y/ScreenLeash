@@ -44,6 +44,9 @@ public sealed class LeashForm : Form
     /// <summary>正在做"绳子内部拖动排序"（未交给 OLE）。</summary>
     private bool _internalDrag;
 
+    /// <summary>诊断日志的 Move 打点计数（前几次足够定位）。</summary>
+    private int _diagMoves;
+
     /// <summary>内部拖动时的插入位置（同边排序用；-1 = 跨边或无效）。</summary>
     private int _insertIndex = -1;
 
@@ -358,11 +361,40 @@ public sealed class LeashForm : Form
     }
 
     // ── 鼠标 ─────────────────────────────────────────────────────
+    /// <summary>
+    /// 拖放诊断日志：写到 %LOCALAPPDATA%\ScreenLeash\logs\drag-diag.log。
+    /// 拖放行为受 Capture / OLE / 窗口样式共同影响，读代码定不了因，
+    /// 只能把事件序列和关键状态打出来看。日志失败绝不影响功能。
+    /// </summary>
+    private static void DragDiag(string message)
+    {
+        try
+        {
+            var dir = Path.Combine(AppPaths.Default.Root, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(
+                Path.Combine(dir, "drag-diag.log"),
+                DateTime.Now.ToString("HH:mm:ss.fff") + " " + message + Environment.NewLine);
+        }
+        catch
+        {
+            // 诊断日志写不进去也不该影响拖放。
+        }
+    }
+
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
 
         UpdateHover(e.Location);
+
+        if (_diagMoves < Metrics.DiagMoveSamples)
+        {
+            _diagMoves++;
+            DragDiag("Move#" + _diagMoves + " btn=" + e.Button + " mouseBtns=" + Control.MouseButtons
+                + " capture=" + Capture + " pressed=" + _pressedIndex + " internal=" + _internalDrag
+                + " loc=" + e.Location);
+        }
 
         if (_pressedIndex < 0 || _dragging)
         {
@@ -745,9 +777,12 @@ public sealed class LeashForm : Form
 
     private void StartDragOut(int index)
     {
+        DragDiag("StartDragOut index=" + index + " mouseBtns=" + Control.MouseButtons);
+
         var items = _store.ForEdge(Edge);
         if (index < 0 || index >= items.Count)
         {
+            DragDiag("StartDragOut 放弃：index 越界 count=" + items.Count);
             return;
         }
 
@@ -777,6 +812,8 @@ public sealed class LeashForm : Form
     protected override void OnDragEnter(DragEventArgs drgevent)
     {
         base.OnDragEnter(drgevent);
+
+        DragDiag("DragEnter isDragging=" + DragOut.IsDragging + " hasFileDrop=" + (drgevent.Data?.GetDataPresent(DataFormats.FileDrop) == true));
 
         // 自己拖出的卡片**也允许进入**：拖到对侧要能弹底框、要能落下去做"移动"。
         // 拦截只能放在 OnDragDrop 里（按移动处理），放在这里会导致拖不过去。
