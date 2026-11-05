@@ -401,6 +401,7 @@ public sealed class LeashHost : IDisposable
 
         _topology.Rebuilt -= OnTopologyRebuilt;
         _topology.Dispose();
+        PreviewHost.Release();
 
         _store.Changed -= OnStoreChanged;
         _store.ItemsEvicted -= OnItemsEvicted;

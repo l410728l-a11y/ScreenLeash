@@ -63,10 +63,15 @@ public static class DragOut
             switch (item.Kind)
             {
                 case Kind.Text:
-                    // 纯文字：只给 UnicodeText，任何编辑器/聊天框拿到的都是文字。
+                    // 纯文字：给两种文本格式。
+                    // UnicodeText 是首选；但 Electron/WebView2 外壳的输入框（如天枢）
+                    // 只请求 ANSI 的 CF_TEXT，只给 UnicodeText 时它们收不到内容
+                    // （用户实测：同一张文字卡片拖到微信可以、拖到天枢不行）。
+                    // 两者都是文本格式，不会像 FileDrop 那样被目标误判成文件或图片。
                     if (!string.IsNullOrEmpty(item.Text))
                     {
                         data.SetData(DataFormats.UnicodeText, item.Text);
+                        data.SetData(DataFormats.Text, item.Text);
                     }
 
                     break;

@@ -37,6 +37,12 @@ public sealed class LeashForm : Form
     private bool _dropTarget;
     private float _lastOpacity = Metrics.CollapsedOpacity;
 
+    /// <summary>悬停放大预览的延迟定时器：停够 <see cref="Metrics.PreviewDelayMs"/> 才弹，避免划过就闪。</summary>
+    private readonly System.Windows.Forms.Timer _previewTimer;
+
+    /// <summary>当前为哪张卡片计时（-1 = 无）。</summary>
+    private int _previewIndex = -1;
+
     public LeashForm(EdgeSlot slot, ItemStore store, Thumbnailer? thumbnails, AppPaths paths, AppSettings settings)
     {
         _slot = slot;
@@ -60,6 +66,9 @@ public sealed class LeashForm : Form
         Bounds = EdgeGeometry.ComputeWithThickness(Edge, _slot.Screen.WorkingArea, _thicknessPx);
         Opacity = Metrics.CollapsedOpacity;
         _lastOpacity = (float)Opacity;
+
+        _previewTimer = new System.Windows.Forms.Timer { Interval = Metrics.PreviewDelayMs };
+        _previewTimer.Tick += OnPreviewTimerTick;
     }
 
     /// <summary>所在边。</summary>
@@ -200,12 +209,8 @@ public sealed class LeashForm : Form
 
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
-        using (var surface = new SolidBrush(_dropTarget ? Theme.SurfaceHover : Theme.Surface))
-        {
-            g.FillRectangle(surface, client);
-        }
-
-        DrawEdgeLine(g, client);
+        DrawSurface(g, client);
+        DrawRopeLine(g, client);
 
         var items = _store.ForEdge(Edge);
         if (items.Count == 0)
@@ -230,24 +235,69 @@ public sealed class LeashForm : Form
         }
     }
 
-    private void DrawEdgeLine(Graphics g, Rectangle client)
+    /// <summary>
+    /// 背景：从贴边一侧向内渐隐到全透明。原来整块实心深色面板会挡住视线
+    /// （用户原话「很宽的一个阴影面积，有点挡视线」），渐隐后只有卡片本身有底色。
+    /// </summary>
+    private void DrawSurface(Graphics g, Rectangle client)
     {
-        using var pen = new Pen(Theme.EdgeHighlight, Metrics.PxFloat(Metrics.HairlineWidth, Dpi));
+        var inner = _dropTarget ? Theme.SurfaceHover : Theme.Surface;
+        var (from, to, angle) = Edge switch
+        {
+            EdgeKind.Left => (inner, Color.Transparent, Metrics.GradientAngleRightward),
+            EdgeKind.Right => (Color.Transparent, inner, Metrics.GradientAngleRightward),
+            EdgeKind.Top => (inner, Color.Transparent, Metrics.GradientAngleDownward),
+            _ => (Color.Transparent, inner, Metrics.GradientAngleDownward),
+        };
+
+        using var brush = new LinearGradientBrush(client, from, to, angle);
+        g.FillRectangle(brush, client);
+    }
+
+    /// <summary>
+    /// 绳子本体：沿边的一条轻微下垂的贝塞尔曲线，代替原来贴边的一条直线。
+    /// 下垂量由 <see cref="Metrics.RopeSagDip"/> 控制（收起态只有 6px 高，弧很小；展开后更明显）。
+    /// </summary>
+    private void DrawRopeLine(Graphics g, Rectangle client)
+    {
+        var sag = Metrics.PxFloat(Metrics.RopeSagDip, Dpi);
+        var inset = Metrics.PxFloat(Metrics.RopeEdgeInset, Dpi);
+
+        using var path = new GraphicsPath();
         switch (Edge)
         {
-            case EdgeKind.Left:
-                g.DrawLine(pen, 0, 0, 0, client.Height);
-                break;
             case EdgeKind.Right:
-                g.DrawLine(pen, client.Width - 1, 0, client.Width - 1, client.Height);
+                path.AddBezier(
+                    new PointF(client.Right - inset, client.Top),
+                    new PointF(client.Right - inset - sag, client.Height * Metrics.RopeCuspRatioNear),
+                    new PointF(client.Right - inset - sag, client.Height * Metrics.RopeCuspRatioFar),
+                    new PointF(client.Right - inset, client.Bottom));
+                break;
+            case EdgeKind.Left:
+                path.AddBezier(
+                    new PointF(client.Left + inset, client.Top),
+                    new PointF(client.Left + inset + sag, client.Height * Metrics.RopeCuspRatioNear),
+                    new PointF(client.Left + inset + sag, client.Height * Metrics.RopeCuspRatioFar),
+                    new PointF(client.Left + inset, client.Bottom));
                 break;
             case EdgeKind.Top:
-                g.DrawLine(pen, 0, 0, client.Width, 0);
+                path.AddBezier(
+                    new PointF(client.Left, client.Top + inset),
+                    new PointF(client.Width * Metrics.RopeCuspRatioNear, client.Top + inset + sag),
+                    new PointF(client.Width * Metrics.RopeCuspRatioFar, client.Top + inset + sag),
+                    new PointF(client.Right, client.Top + inset));
                 break;
             default:
-                g.DrawLine(pen, 0, client.Height - 1, client.Width, client.Height - 1);
+                path.AddBezier(
+                    new PointF(client.Left, client.Bottom - inset),
+                    new PointF(client.Width * Metrics.RopeCuspRatioNear, client.Bottom - inset - sag),
+                    new PointF(client.Width * Metrics.RopeCuspRatioFar, client.Bottom - inset - sag),
+                    new PointF(client.Right, client.Bottom - inset));
                 break;
         }
+
+        using var pen = new Pen(Theme.EdgeHighlight, Metrics.PxFloat(Metrics.RopeStrokeWidth, Dpi));
+        g.DrawPath(pen, path);
     }
 
     // ── 鼠标 ─────────────────────────────────────────────────────
@@ -303,6 +353,7 @@ public sealed class LeashForm : Form
         if (_hoverIndex >= 0)
         {
             _hoverIndex = -1;
+            SchedulePreview(-1);
             Invalidate();
         }
     }
@@ -321,6 +372,19 @@ public sealed class LeashForm : Form
         var direction = e.Delta > 0 ? -1 : 1;
         _scrollPx = EdgeLayout.ClampScroll(Edge, ClientRectangle, Dpi, items.Count, _scrollPx + (direction * step));
         Invalidate();
+
+        // 滚动后卡片位移，悬停的可能是另一张：预览已显示时立即切到新卡片（“不断弹出”），
+        // 否则重新计时，避免刚划过就闪。
+        var underCursor = HitIndex(e.Location);
+        _hoverIndex = underCursor;
+        if (PreviewHost.IsVisible && underCursor >= 0)
+        {
+            ShowPreviewNow(underCursor);
+        }
+        else
+        {
+            SchedulePreview(underCursor);
+        }
     }
 
     private void UpdateHover(Point location)
@@ -332,6 +396,7 @@ public sealed class LeashForm : Form
         }
 
         _hoverIndex = index;
+        SchedulePreview(index);
         Invalidate();
     }
 
@@ -373,6 +438,72 @@ public sealed class LeashForm : Form
         }
     }
 
+    /// <summary>
+    /// 安排/取消悬停预览。只有同一张卡片停够 <see cref="Metrics.PreviewDelayMs"/> 才弹；
+    /// 换卡片、移出、滚动、开始拖拽都先收起旧预览。
+    /// </summary>
+    private void SchedulePreview(int index)
+    {
+        _previewTimer.Stop();
+        _previewIndex = index;
+
+        if (index < 0)
+        {
+            PreviewHost.Hide();
+            return;
+        }
+
+        PreviewHost.Hide();
+        _previewTimer.Start();
+    }
+
+    private void OnPreviewTimerTick(object? sender, EventArgs e)
+    {
+        _previewTimer.Stop();
+
+        if (_previewIndex < 0 || _hoverIndex != _previewIndex)
+        {
+            return;
+        }
+
+        ShowPreviewNow(_previewIndex);
+    }
+
+    /// <summary>立即显示某张卡片的放大预览（定时器到点与滚动跟随共用，跳过延迟）。</summary>
+    private void ShowPreviewNow(int index)
+    {
+        var items = _store.ForEdge(Edge);
+        if (index < 0 || index >= items.Count)
+        {
+            PreviewHost.Hide();
+            return;
+        }
+
+        var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items.Count, _scrollPx);
+        if (index >= slots.Count)
+        {
+            PreviewHost.Hide();
+            return;
+        }
+
+        var local = slots[index].Bounds;
+        var anchor = new Rectangle(PointToScreen(local.Location), local.Size);
+        PreviewHost.Show(items[index], _paths, anchor, Dpi, _slot.Screen.WorkingArea);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _previewTimer.Stop();
+            _previewTimer.Tick -= OnPreviewTimerTick;
+            _previewTimer.Dispose();
+            PreviewHost.Hide();
+        }
+
+        base.Dispose(disposing);
+    }
+
     private void StartDragOut(int index)
     {
         var items = _store.ForEdge(Edge);
@@ -410,6 +541,7 @@ public sealed class LeashForm : Form
 
         _dropTarget = true;
         drgevent.Effect = DragIn.EffectsFor(drgevent.Data);
+        SchedulePreview(-1);
         SetState(LeashVisualState.Dragging);
         Invalidate();
     }

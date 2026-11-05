@@ -52,6 +52,41 @@ public static class Metrics
     public const int TextLines = 3;
 
     // ── 几何（GDI+ 路径用）─────────────────────────────────────────
+    // ── 绳子外观 ─────────────────────────────────────────────────
+    /// <summary>绳子弧线的下垂量（DIP）：沿边中段向屏内偏移多少，形成"绳"的弧度。</summary>
+    public const float RopeSagDip = 6f;
+
+    /// <summary>绳子描边宽度（DIP）。</summary>
+    public const float RopeStrokeWidth = 2.5f;
+
+    /// <summary>绳子离窗口边的内缩（DIP），避免线压在窗口边界上被裁掉一半。</summary>
+    public const float RopeEdgeInset = 2f;
+
+    /// <summary>贝塞尔控制点靠近起点的位置比例（0..1）。</summary>
+    public const float RopeCuspRatioNear = 0.33f;
+
+    /// <summary>贝塞尔控制点靠近终点的位置比例（0..1）。</summary>
+    public const float RopeCuspRatioFar = 0.67f;
+
+    /// <summary>渐变方向：水平（从左到右，0°）。</summary>
+    public const float GradientAngleRightward = 0f;
+
+    /// <summary>渐变方向：垂直（从上到下，90°）。</summary>
+    public const float GradientAngleDownward = 90f;
+
+    // ── 悬停放大预览 ─────────────────────────────────────────────
+    /// <summary>鼠标停在一张卡片上多久后弹出放大预览（毫秒）。太短会在划过时乱闪。</summary>
+    public const int PreviewDelayMs = 420;
+
+    /// <summary>预览图相对工作区高度的比例上限（0..1）。</summary>
+    public const float PreviewMaxHeightRatio = 0.6f;
+
+    /// <summary>预览窗与绳子/屏幕边的间距（DIP）。</summary>
+    public const int PreviewMarginDip = 10;
+
+    /// <summary>预览窗圆角（DIP）。</summary>
+    public const int PreviewRadiusDip = 12;
+
     /// <summary>四分之一圆弧角（度），圆角矩形用。</summary>
     public const float ArcQuarter = 90f;
 
