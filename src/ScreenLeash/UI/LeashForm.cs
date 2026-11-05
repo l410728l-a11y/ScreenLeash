@@ -364,8 +364,18 @@ public sealed class LeashForm : Form
 
         UpdateHover(e.Location);
 
-        if (e.Button != MouseButtons.Left || _pressedIndex < 0 || _dragging)
+        if (_pressedIndex < 0 || _dragging)
         {
+            return;
+        }
+
+        // 不能再用 e.Button 判断"左键还按着吗"：一旦设了 Capture，
+        // MouseMove 的事件源变了，e.Button 会变成 None，导致第二帧就 return，
+        // 表现为"卡片怎么拖都拖不出来"。
+        // Control.MouseButtons 读的是真实按键状态，不受鼠标捕获影响。
+        if ((Control.MouseButtons & MouseButtons.Left) == 0)
+        {
+            _pressedIndex = -1;
             return;
         }
 
