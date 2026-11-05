@@ -42,6 +42,16 @@ internal static class Program
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
+    /// <summary>注册全局热键（降级入口 Ctrl+Alt+V 用）。</summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool RegisterHotKey(IntPtr hWnd, int id, int fsModifiers, int vk);
+
+    /// <summary>注销全局热键。</summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
     [STAThread]
     private static void Main()
     {
@@ -121,14 +131,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _trayIcon;
     private readonly ContextMenuStrip _menu;
     private readonly ToolStripMenuItem _toggleItem;
+    private readonly ToolStripMenuItem _pasteHookItem;
     private readonly ToolStripMenuItem _startupItem;
     private readonly MessageWindow _messageWindow;
     private readonly LeashHost _host;
+    private readonly int _uiThreadId;
+    private readonly SynchronizationContext? _uiContext;
 
     internal static TrayApplicationContext? Current { get; private set; }
 
     internal TrayApplicationContext()
     {
+        // 先把 UI 线程身份记下来：气泡提示可能从后台线程发起（剪贴板 STA 读取的续接、
+        // 钩子线程转发的消息），NotifyIcon 不能在这些线程上直接碰。
+        _uiThreadId = Environment.CurrentManagedThreadId;
+        _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+
         Current = this;
 
         AppPaths paths = AppPaths.Default;
@@ -138,6 +156,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _host = new LeashHost(paths, settings);
 
         _toggleItem = new ToolStripMenuItem("隐藏绳子", null, (_, _) => ToggleVisibility());
+
+        // 勾选状态回显**真实钩子状态**（IsPasteHookInstalled），不是设置文件里的布尔值：
+        // 启动时安装失败会把设置回写成 false，两边必须一致。
+        _pasteHookItem = new ToolStripMenuItem("Ctrl+V 兜底", null, (_, _) => TogglePasteHook())
+        {
+            Checked = _host.IsPasteHookInstalled,
+            CheckOnClick = false,
+        };
+
         var pasteItem = new ToolStripMenuItem("粘贴挂上（剪贴板）", null, async (_, _) => await _host.PasteFromClipboardAsync());
         var openItem = new ToolStripMenuItem("打开数据目录", null, (_, _) => OpenDataFolder());
         _startupItem = new ToolStripMenuItem("开机自启", null, (_, _) => ToggleStartup())
@@ -149,6 +176,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _menu = new ContextMenuStrip();
         _menu.Items.Add(_toggleItem);
+        _menu.Items.Add(_pasteHookItem);
         _menu.Items.Add(pasteItem);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(_startupItem);
@@ -165,10 +193,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _trayIcon.DoubleClick += (_, _) => ToggleVisibility();
 
-        _messageWindow = new MessageWindow(Program.ActivateMessageId);
-        _ = _messageWindow.Handle;
+        _messageWindow = new MessageWindow(
+            Program.ActivateMessageId,
+            edge => _ = _host.PasteFromClipboardAsync(edge),
+            () => _ = _host.PasteFromClipboardAsync());
+
+        // 接收器句柄必须在钩子可能投递之前交出去；构造里已强制建过句柄。
+        _host.AttachPasteReceiver(_messageWindow.Handle);
 
         UpdateTooltip();
+
+        ReportPasteFallbackState();
     }
 
     internal static void ShowBalloon(string title, string text)
@@ -179,10 +214,52 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
+        // 非 UI 线程直接碰 NotifyIcon 会挂：切回构造线程再弹。
+        if (current._uiThreadId != Environment.CurrentManagedThreadId)
+        {
+            current._uiContext?.Post(_ => ShowBalloon(title, text), null);
+            return;
+        }
+
         NotifyIcon icon = current._trayIcon;
         icon.BalloonTipTitle = title;
         icon.BalloonTipText = text;
         icon.ShowBalloonTip(5000);
+    }
+
+    /// <summary>
+    /// 启动后把「全局粘贴」的真实可用性告诉用户：钩子装不上就置灰并点名降级入口，
+    /// 降级热键也被占用就再报一次。两件事都发生时不至于让用户以为 Ctrl+V 还能用。
+    /// </summary>
+    private void ReportPasteFallbackState()
+    {
+        if (_host.PasteHookInstallFailed)
+        {
+            _pasteHookItem.Enabled = false;
+            ShowBalloon(
+                "Ctrl+V 兜底不可用",
+                "全局键盘钩子被系统拒绝或被占用；可用托盘「粘贴挂上（剪贴板）」或 Ctrl+Alt+V");
+        }
+
+        if (!_messageWindow.HotkeyRegistered)
+        {
+            ShowBalloon("快捷键不可用", "Ctrl+Alt+V 已被其它程序占用；可用托盘「粘贴挂上（剪贴板）」");
+        }
+    }
+
+    private void TogglePasteHook()
+    {
+        bool enable = !_host.IsPasteHookInstalled;
+        bool ok = _host.TrySetPasteHook(enable);
+        _pasteHookItem.Checked = _host.IsPasteHookInstalled;
+
+        if (!ok)
+        {
+            _pasteHookItem.Enabled = false;
+            ShowBalloon(
+                "Ctrl+V 兜底不可用",
+                "全局键盘钩子被系统拒绝或被占用；可用托盘「粘贴挂上（剪贴板）」或 Ctrl+Alt+V");
+        }
     }
 
     private void ToggleVisibility()
@@ -252,20 +329,45 @@ internal sealed class TrayApplicationContext : ApplicationContext
         base.Dispose(disposing);
     }
 
-    /// <summary>永不显示的顶层窗口：只负责在 WndProc 里接收激活广播。</summary>
+    /// <summary>
+    /// 永不显示的顶层窗口：接收「重复启动」激活广播、钩子的 <c>WM_APP_PASTE</c> 粘贴请求与降级热键。
+    ///
+    /// <para><b>为什么接收器必须在这里而不是 LeashForm</b>：四边全关时程序里一个绳子窗口都没有，
+    /// 但全局粘贴仍要能用（docs/PROBES.md P3 实测：此时进程无窗口，SynchronizationContext 为 NULL）。
+    /// 本窗口由托盘持有，生命周期与托盘一致，与绳子窗口数量无关；钩子只 PostMessage 到它的句柄，
+    /// 不依赖同步上下文。</para>
+    /// </summary>
     private sealed class MessageWindow : Form
     {
         private readonly uint _activateMessage;
+        private readonly Action<EdgeKind?> _onPasteRequest;
+        private readonly Action _onPasteHotkey;
+        private readonly bool _hotkeyRegistered;
 
-        internal MessageWindow(uint activateMessage)
+        internal MessageWindow(uint activateMessage, Action<EdgeKind?> onPasteRequest, Action onPasteHotkey)
         {
             _activateMessage = activateMessage;
+            _onPasteRequest = onPasteRequest ?? throw new ArgumentNullException(nameof(onPasteRequest));
+            _onPasteHotkey = onPasteHotkey ?? throw new ArgumentNullException(nameof(onPasteHotkey));
             ShowInTaskbar = false;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             Location = new Point(-32000, -32000);
             Size = new Size(1, 1);
+
+            // 强制建句柄：钩子线程随时可能 PostMessage，句柄必须在此之前就存在。
+            _ = Handle;
+
+            // 降级入口：钩子装不上时用户仍能一键粘贴。注册失败不致命（托盘菜单还在）。
+            _hotkeyRegistered = Program.RegisterHotKey(
+                Handle,
+                InteropConstants.PasteHotkeyId,
+                InteropConstants.ModControl | InteropConstants.ModAlt | InteropConstants.ModNoRepeat,
+                InteropConstants.VkKeyV);
         }
+
+        /// <summary>Ctrl+Alt+V 是否注册成功（被占用时托盘会提示降级到菜单）。</summary>
+        internal bool HotkeyRegistered => _hotkeyRegistered;
 
         protected override bool ShowWithoutActivation => true;
 
@@ -281,8 +383,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
             {
                 ShowBalloon(Program.ProductName, "已在运行，重复启动已被忽略");
             }
+            else if (m.Msg == InteropConstants.WmAppPaste)
+            {
+                // 钩子只负责投递与编码；解码后交给宿主，null 由宿主回退最近活跃边。
+                _onPasteRequest(PasteRequestCodec.Decode(m.WParam));
+            }
+            else if (m.Msg == InteropConstants.WmHotkey && m.WParam.ToInt64() == InteropConstants.PasteHotkeyId)
+            {
+                _onPasteHotkey();
+            }
 
             base.WndProc(ref m);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && _hotkeyRegistered)
+            {
+                _ = Program.UnregisterHotKey(Handle, InteropConstants.PasteHotkeyId);
+            }
+
+            base.Dispose(disposing);
         }
     }
 }

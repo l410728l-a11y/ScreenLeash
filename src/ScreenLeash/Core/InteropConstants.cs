@@ -43,6 +43,38 @@ public static class InteropConstants
     /// <summary>GetAsyncKeyState 的「当前按下」掩码。</summary>
     public const int KeyStatePressed = 0x8000;
 
+    // ── 全局粘贴钩子 ─────────────────────────────────────────────
+    /// <summary>WM_APP + 1：钩子线程 PostMessage 给接收窗口的「粘贴请求」消息。</summary>
+    public const int WmAppPaste = 0x8000 + 1;
+
+    /// <summary>WM_QUIT：PostThreadMessage 让钩子线程退出消息泵。</summary>
+    public const int WmQuit = 0x0012;
+
+    /// <summary>装钩子时等待钩子线程就绪的上限（毫秒）。</summary>
+    public const int HookReadyTimeoutMs = 2000;
+
+    /// <summary>卸钩子时等待钩子线程退出（Join）的上限（毫秒）。</summary>
+    public const int HookShutdownTimeoutMs = 2000;
+
+    // ── 全局热键（Ctrl+V 兜底的降级入口）─────────────────────────
+    /// <summary>WM_HOTKEY：RegisterHotKey 注册的组合键被按下时投递给窗口的消息。</summary>
+    public const int WmHotkey = 0x0312;
+
+    /// <summary>MOD_ALT。</summary>
+    public const int ModAlt = 0x0001;
+
+    /// <summary>MOD_CONTROL。</summary>
+    public const int ModControl = 0x0002;
+
+    /// <summary>MOD_NOREPEAT：按住不放只触发一次。</summary>
+    public const int ModNoRepeat = 0x4000;
+
+    /// <summary>降级热键 Ctrl+Alt+V 的标识（用来在 WndProc 里区分其它 RegisterHotKey 调用方）。</summary>
+    public const int PasteHotkeyId = 0x5C1;
+
+    /// <summary>剪贴板 STA 读取的总预算（毫秒）：超时即提示「剪贴板被占用」，绝不让 UI 线程等。</summary>
+    public const int ClipboardReadTimeoutMs = 3000;
+
     // ── 剪贴板 ───────────────────────────────────────────────────
     /// <summary>WM_CLIPBOARDUPDATE：AddClipboardFormatListener 的回调消息。</summary>
     public const int WmClipboardUpdate = 0x031D;

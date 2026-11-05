@@ -65,7 +65,22 @@ public static class FocusProbe
     /// 当前是否应该由绳子接管控件粘贴。true = 前台确实没有可粘贴的地方。
     /// 任何探测失败都返回 false（放行给系统），遵循「宁可不管，不可误管」。
     /// </summary>
-    public static bool ShouldTakeOverPaste()
+    public static bool ShouldTakeOverPaste() => ShouldTakeOverPaste(force: false);
+
+    /// <summary>
+    /// 同上，并允许调用方显式强制接管（<paramref name="force"/>）。
+    /// 组合律只有一份实现，落在纯函数 <see cref="PasteTargetPolicy.ShouldTakeOver"/> 里，
+    /// 这里只负责探测「前台有没有可粘贴目标」这一半事实。
+    /// </summary>
+    /// <param name="force">用户/设置显式要求接管，优先于探测结果。</param>
+    public static bool ShouldTakeOverPaste(bool force)
+    {
+        bool foregroundHasNoPasteTarget = ProbeForegroundHasNoPasteTarget();
+        return PasteTargetPolicy.ShouldTakeOver(force, foregroundHasNoPasteTarget);
+    }
+
+    /// <summary>探测：前台是否确实没有可粘贴目标。任何探测失败都返回 false（放行给系统）。</summary>
+    private static bool ProbeForegroundHasNoPasteTarget()
     {
         var foreground = GetForegroundWindow();
         if (foreground == IntPtr.Zero)
@@ -84,19 +99,12 @@ public static class FocusProbe
         var className = TryGetClassName(focus);
         if (string.IsNullOrEmpty(className))
         {
-            // 拿不到类名时保守放行，避免误吞。
+            // 注意：与 IsNoPasteTargetClass("") 的约定相反——**探测**失败时保守放行，避免误吞；
+            // 只有「确实拿不到焦点窗口」才接管。两者不可合并。
             return false;
         }
 
-        foreach (var desktopClass in DesktopClassNames)
-        {
-            if (string.Equals(className, desktopClass, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return IsNoPasteTargetClass(className);
     }
 
     /// <summary>取前台线程的焦点窗口；失败返回 <see cref="IntPtr.Zero"/>。</summary>

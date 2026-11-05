@@ -6,6 +6,8 @@ using System.IO;
 using System.Text;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using ScreenLeash.Core;
 
@@ -87,6 +89,27 @@ public sealed class ParsedContent
             ParsedKind.Image => $"Image({ImageBytes?.Length ?? 0} bytes)",
             _ => "None",
         };
+}
+
+/// <summary>一次 STA 剪贴板读取的结局。</summary>
+public enum ClipboardReadOutcome
+{
+    /// <summary>读到了（<see cref="ParsedContent.HasContent"/> 可能为 false）。</summary>
+    Ok,
+
+    /// <summary>超过预算仍未返回：剪贴板被别的进程长时间占用。</summary>
+    TimedOut,
+
+    /// <summary>读取线程异常退出。</summary>
+    Faulted,
+}
+
+/// <summary>STA 剪贴板读取的结果：结局 + 内容（非 Ok 时内容为空）。</summary>
+public readonly record struct ClipboardReadResult(ClipboardReadOutcome Outcome, ParsedContent Content)
+{
+    /// <summary>成功读到的结果。</summary>
+    public static ClipboardReadResult FromContent(ParsedContent content) =>
+        new(ClipboardReadOutcome.Ok, content);
 }
 
 /// <summary>
@@ -194,6 +217,60 @@ public static class ClipboardParser
         {
             // 剪贴板被占用：返回空，让用户再试一次即可。
             return ParsedContent.Empty;
+        }
+    }
+
+    /// <summary>
+    /// 在短命 STA 线程上读剪贴板，并在 <paramref name="timeout"/> 内把结果交回调用方。
+    ///
+    /// <para><b>为什么必须离开 UI 线程</b>：剪贴板 API 要求 STA，而 UI 线程满足；问题是
+    /// <c>Clipboard.GetDataObject</c> 会被别的进程的 <c>OpenClipboard</c> 阻塞——实测有的程序
+    /// 把剪贴板锁住几百毫秒到数秒，UI 线程一旦进去就会整屏卡住（绳子动画、托盘响应全停）。
+    /// 这里把读取放到一次性后台 STA 线程，UI 只 await：超时立刻返回
+    /// <see cref="ClipboardReadOutcome.TimedOut"/>，由调用方提示「剪贴板被占用」。</para>
+    ///
+    /// <para><b>为什么超时后不 Join 那个线程</b>：如果它已经卡在系统调用里，Join 会把 UI 线程
+    /// 卡回去，等于没解决问题。线程标记 <c>IsBackground</c>，最坏情况是它自己卡到进程退出，
+    /// 由 OS 回收。</para>
+    /// </summary>
+    /// <param name="timeout">读取预算；超时即返回 TimedOut。</param>
+    public static async Task<ClipboardReadResult> ReadClipboardStaAsync(TimeSpan timeout)
+    {
+        var completion = new TaskCompletionSource<ParsedContent>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var reader = new Thread(() =>
+        {
+            try
+            {
+                completion.TrySetResult(ParseClipboard());
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "ScreenLeash.ClipboardRead",
+        };
+
+        // 剪贴板 Win32 API 要求 STA；SetApartmentState 必须在 Start 之前。
+        reader.SetApartmentState(ApartmentState.STA);
+        reader.Start();
+
+        var winner = await Task.WhenAny(completion.Task, Task.Delay(timeout)).ConfigureAwait(false);
+        if (winner != completion.Task)
+        {
+            return new ClipboardReadResult(ClipboardReadOutcome.TimedOut, ParsedContent.Empty);
+        }
+
+        try
+        {
+            return ClipboardReadResult.FromContent(await completion.Task.ConfigureAwait(false));
+        }
+        catch (Exception)
+        {
+            return new ClipboardReadResult(ClipboardReadOutcome.Faulted, ParsedContent.Empty);
         }
     }
 

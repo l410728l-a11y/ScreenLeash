@@ -77,6 +77,22 @@ public sealed class LeashForm : Form
     /// <summary>是否处于展开（悬停/拖拽）。</summary>
     public bool IsExpanded => EdgeGeometry.IsExpanded(_state);
 
+    /// <summary>
+    /// 展开态的窗口矩形（屏幕坐标）。
+    ///
+    /// <para>无论缓动动画走到哪一帧都返回**满展开**矩形：全局粘贴的命中判定需要稳定几何，
+    /// 用当前厚度会让命中区域在动画期间抖动。矩形只随屏幕/DPI/边变化，因此可以与状态事件
+    /// 一起当作快照内容发布。</para>
+    /// </summary>
+    public Rectangle ExpandedBounds =>
+        EdgeGeometry.ComputeWithThickness(Edge, _slot.Screen.WorkingArea, Metrics.Px(Metrics.ExpandedThickness, Dpi));
+
+    /// <summary>
+    /// 视觉状态（收起 ↔ 展开）发生迁移时触发，参数无意义。
+    /// 宿主用它即时重发可粘贴落点快照——否则钩子线程只能看到上一轮 tick 的旧快照。
+    /// </summary>
+    public event EventHandler? StateChanged;
+
     protected override CreateParams CreateParams
     {
         get
@@ -162,6 +178,7 @@ public sealed class LeashForm : Form
 
         _state = state;
         Invalidate();
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ── 绘制 ─────────────────────────────────────────────────────
