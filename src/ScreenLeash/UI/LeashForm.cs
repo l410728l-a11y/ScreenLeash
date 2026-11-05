@@ -135,6 +135,41 @@ public sealed class LeashForm : Form
     }
 
     /// <summary>由宿主每 tick 调用：根据光标与按键状态决定该不该展开。</summary>
+    /// <summary>当前是否为了接收拖放而临时取消了透明键。</summary>
+    private bool _dropOpaque;
+
+    /// <summary>
+    /// 拖放期间临时取消像素级透明。
+    ///
+    /// <para>为什么需要：TransparencyKey 抠掉的像素**连鼠标命中也穿透**。
+    /// 微信"已发出的消息"带 FileDrop，光标通常停在卡片上，能触发 DragEnter；
+    /// 而"草稿里打的字"是纯文本（System.String|UnicodeText|Text），
+    /// 光标稍微落到卡片缝隙或空白处就完全穿透 —— 表现为**不显示底框、也挂不上**。
+    /// 左键一松开就恢复透明，不影响平时的观感。</para>
+    /// </summary>
+    public void SetDropOpaque(bool opaque)
+    {
+        if (_dropOpaque == opaque)
+        {
+            return;
+        }
+
+        _dropOpaque = opaque;
+
+        if (opaque)
+        {
+            TransparencyKey = Color.Empty;
+            BackColor = Theme.SurfaceDropOpaque;
+        }
+        else
+        {
+            BackColor = Theme.TransparencyKey;
+            TransparencyKey = Theme.TransparencyKey;
+        }
+
+        Invalidate();
+    }
+
     public void EvaluateCursor(Point cursor, bool leftButtonDown)
     {
         if (_dragging || _dropTarget)

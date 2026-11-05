@@ -366,6 +366,10 @@ public sealed class LeashHost : IDisposable
             // 而 Capture 设不上时 OnMouseCaptureChanged 会清掉 _pressedIndex，
             // 导致"按下明明命中了卡片，拖到一半却变成 -1"。
             form.PollDrag(cursor, leftDown);
+
+            // 左键按住期间临时取消透明键：透明像素连鼠标命中也穿透，
+            // 会导致纯文本拖入（微信草稿文字）触发不了 DragEnter、也不出底框。
+            form.SetDropOpaque(leftDown);
             form.Tick();
             if (form.IsExpanded)
             {

@@ -33,6 +33,9 @@ public static class Theme
     /// 在黑色壁纸上几乎看不出窗口边界；真正可见的元素只有卡片和绳线。</summary>
     public const uint SurfaceOpaqueArgb = 0xFF0B0C10;
 
+    /// <summary>**拖放期间**用的不透明底色（近纯黑）：取消透明键后靠它撑住整块可命中区域。</summary>
+    public const uint SurfaceDropOpaqueArgb = 0xFF07080A;
+
     /// <summary>拖入经过时的提示底色：**不透明**深蓝。
     /// 半透明填充会与 TransparencyKey 的洋红混合出花边，所以这里必须给实色。</summary>
     public const uint SurfaceHoverArgb = 0xFF1E3A5F;
@@ -86,6 +89,8 @@ public static class Theme
     public static Color TransparencyKey => FromArgb(TransparencyKeyArgb);
 
     public static Color SurfaceOpaque => FromArgb(SurfaceOpaqueArgb);
+
+    public static Color SurfaceDropOpaque => FromArgb(SurfaceDropOpaqueArgb);
 
     public static Color SurfaceHover => FromArgb(SurfaceHoverArgb);
 
