@@ -23,6 +23,12 @@ namespace ScreenLeash.Interop;
 public static class DragOut
 {
     /// <summary>
+    /// 进程级「正在向外拖」标志。必须是静态的：从右边绳拖到左边绳时，
+    /// 目标是**另一个** LeashForm 实例，实例字段看不到源窗口的状态，
+    /// 就会把这次「自己拖自己」当成外部拖入，凭空多出一张卡片（用户报的重复文件）。
+    /// </summary>
+    public static bool IsDragging { get; private set; }
+    /// <summary>
     /// 发起拖出。必须在 UI 线程、由鼠标按下+移动的事件里调用（<c>DoDragDrop</c> 是同步模态消息循环）。
     /// </summary>
     /// <param name="source">拖放源控件（通常是卡片所在的绳子窗口）。</param>
@@ -55,6 +61,7 @@ public static class DragOut
         var tempFiles = new List<string>();
         Image? ownedBitmap = null;
 
+        IsDragging = true;
         try
         {
             // 按卡片类型**只给一种**格式：多格式并给等于把选择权交给目标程序，
@@ -136,6 +143,7 @@ public static class DragOut
         finally
         {
             ownedBitmap?.Dispose();
+            IsDragging = false;
         }
     }
 

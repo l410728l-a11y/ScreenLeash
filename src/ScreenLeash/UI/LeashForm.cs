@@ -610,6 +610,14 @@ public sealed class LeashForm : Form
     {
         base.OnDragEnter(drgevent);
 
+        // 自己拖出去的卡片落回自己身上（含跨边拖到对侧）不算拖入：
+        // 否则会凭空多出一张卡片，而且新卡片的 BlobName 是 GUID，名字就乱了。
+        if (DragOut.IsDragging)
+        {
+            drgevent.Effect = DragDropEffects.None;
+            return;
+        }
+
         _dropTarget = true;
         drgevent.Effect = DragIn.EffectsFor(drgevent.Data);
         SchedulePreview(-1);
@@ -621,7 +629,9 @@ public sealed class LeashForm : Form
     {
         base.OnDragOver(drgevent);
 
-        drgevent.Effect = DragIn.EffectsFor(drgevent.Data);
+        drgevent.Effect = DragOut.IsDragging
+            ? DragDropEffects.None
+            : DragIn.EffectsFor(drgevent.Data);
     }
 
     protected override void OnDragLeave(EventArgs e)
@@ -636,6 +646,15 @@ public sealed class LeashForm : Form
     protected override void OnDragDrop(DragEventArgs drgevent)
     {
         base.OnDragDrop(drgevent);
+
+        // 自己拖出的卡片松手落回绳子：直接忽略，既不建卡也不吞掉。
+        if (DragOut.IsDragging)
+        {
+            drgevent.Effect = DragDropEffects.None;
+            _dropTarget = false;
+            Invalidate();
+            return;
+        }
 
         _dropTarget = false;
         drgevent.Effect = DragDropEffects.Copy;

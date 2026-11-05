@@ -36,13 +36,13 @@ public static class Metrics
     public const int CardRadius = 10;
 
     /// <summary>卡片高度（DIP）。</summary>
-    public const int CardHeight = 96;
+    public const int CardHeight = 112;
 
     /// <summary>卡片宽度（DIP）；图片/文件/文本卡片同宽，保证沿边排列整齐。</summary>
-    public const int CardWidth = 168;
+    public const int CardWidth = 196;
 
-    /// <summary>缩略图边长（DIP）。</summary>
-    public const int ThumbSize = 88;
+    /// <summary>缩略图边长（DIP）。不能超过卡片内区高度（112 - 2×10 = 92），否则会缩小显示。</summary>
+    public const int ThumbSize = 92;
 
     /// <summary>缩略图最小边长（DIP），低于此值不绘制缩略图只画图标。</summary>
     public const int ThumbMinSize = 24;
@@ -105,7 +105,7 @@ public static class Metrics
     public const float ArcThreeQuarter = 270f;
 
     /// <summary>单行文本高度（DIP）。</summary>
-    public const int LineHeight = 16;
+    public const int LineHeight = 19;
 
     /// <summary>文件图标边长（DIP）。</summary>
     public const int IconSize = 32;
@@ -120,11 +120,11 @@ public static class Metrics
     /// <summary>发丝线宽度（DIP），用于贴边细线描边。</summary>
     public const float HairlineWidth = 1f;
 
-    /// <summary>正文字号（DIP）。9.5 比原来的 8.5 更易读——用户反馈黑底上"显示不了什么字"。</summary>
-    public const float FontSize = 9.5f;
+    /// <summary>正文字号（DIP）。用户反馈卡片里文字偏小，9.5 → 11。</summary>
+    public const float FontSize = 11f;
 
-    /// <summary>辅助字号（DIP）。</summary>
-    public const float FontSizeSmall = 7.5f;
+    /// <summary>辅助字号（DIP），文件名/次要信息用。</summary>
+    public const float FontSizeSmall = 9f;
 
     /// <summary>标题字号（DIP）。</summary>
     public const float FontSizeTitle = 10f;
