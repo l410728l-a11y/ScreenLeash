@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ScreenLeash.Core;
@@ -502,6 +504,65 @@ public sealed class LeashForm : Form
         }
 
         base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// 双击打开卡片：文件用系统默认程序打开（PDF/Word/图片都能用），
+    /// 文字卡片只在内容本身就是 http/https 链接时才打开浏览器。
+    /// 打开失败只记日志 + 气泡，不影响绳子本身。
+    /// </summary>
+    protected override void OnDoubleClick(EventArgs e)
+    {
+        base.OnDoubleClick(e);
+
+        var index = HitIndex(PointToClient(Cursor.Position));
+        if (index < 0)
+        {
+            return;
+        }
+
+        var items = _store.ForEdge(Edge);
+        if (index >= items.Count)
+        {
+            return;
+        }
+
+        OpenItem(items[index]);
+    }
+
+    private void OpenItem(Item item)
+    {
+        try
+        {
+            if (item.Kind == Kind.Text)
+            {
+                var text = item.Text?.Trim();
+                if (!string.IsNullOrEmpty(text)
+                    && Uri.TryCreate(text, UriKind.Absolute, out var uri)
+                    && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                {
+                    Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+                }
+
+                return;
+            }
+
+            var path = _paths.BlobPath(item.BlobName);
+            if (path is null || !File.Exists(path))
+            {
+                Program.Notify("打不开", "文件已经不在了");
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
+                                   || ex is InvalidOperationException
+                                   || ex is FileNotFoundException)
+        {
+            Program.WriteCrashLog(ex, fatal: false);
+            Program.Notify("打不开", ex.Message);
+        }
     }
 
     private void StartDragOut(int index)

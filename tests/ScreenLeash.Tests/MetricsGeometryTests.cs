@@ -35,7 +35,8 @@ public class MetricsGeometryTests
     {
         Assert.Equal(2f, Metrics.PxFloat(Metrics.StrokeWidth, 96));
         Assert.Equal(3f, Metrics.PxFloat(Metrics.StrokeWidth, 144));
-        Assert.Equal(8.5f, Metrics.PxFloat(Metrics.FontSize, 96));
+        // 96 DPI 下 PxFloat 应原样返回 DIP 值（不因字号调整而失效，故用 Metrics 自身作期望）。
+        Assert.Equal(Metrics.FontSize, Metrics.PxFloat(Metrics.FontSize, 96), 3);
     }
 
     [Fact]

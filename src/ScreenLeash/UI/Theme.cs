@@ -20,31 +20,32 @@ public static class Theme
     public const string MonoFontFamily = "Consolas";
 
     // ── 窗口/绳子 ─────────────────────────────────────────────────
-    /// <summary>绳子本体底色（半透明深色，用于自绘填充）。</summary>
-    public const uint SurfaceArgb = 0xF21C1E24;
+    /// <summary>绳子本体底色：**几乎全透明**，只给鼠标一个极弱的区域暗示。
+    /// 原先 alpha 242 的深灰面板在纯黑桌面上就是一大块"阴影"，挡住后面的内容。</summary>
+    public const uint SurfaceArgb = 0x141C1E24;
 
-    /// <summary>绳子本体不透明底色：WinForms 的 Control.BackColor 不接受带 alpha 的颜色，
-    /// 窗口透明感由 Form.Opacity 与自绘填充叠加得到。</summary>
-    public const uint SurfaceOpaqueArgb = 0xFF1C1E24;
+    /// <summary>窗口 BackColor（WinForms 不接受带 alpha 的颜色）。取近黑，
+    /// 在黑色壁纸上几乎看不出窗口边界；真正可见的元素只有卡片和绳线。</summary>
+    public const uint SurfaceOpaqueArgb = 0xFF0B0C10;
 
-    /// <summary>绳子本体悬停态底色。</summary>
-    public const uint SurfaceHoverArgb = 0xF224262E;
+    /// <summary>拖入经过时的提示底色：淡蓝，不恢复成"大阴影"。</summary>
+    public const uint SurfaceHoverArgb = 0x402A6ED8;
 
-    /// <summary>贴边细线的亮色描边。</summary>
-    public const uint EdgeHighlightArgb = 0x46FFFFFF;
+    /// <summary>绳线颜色：亮天蓝，在黑色背景上清晰可见。</summary>
+    public const uint EdgeHighlightArgb = 0xCC4FC3F7;
 
     /// <summary>面板边缘的暗色分隔。</summary>
     public const uint EdgeShadowArgb = 0x40202028;
 
     // ── 卡片 ─────────────────────────────────────────────────────
-    /// <summary>卡片底色。</summary>
-    public const uint CardBackArgb = 0xFF181A20;
+    /// <summary>卡片底色：明显亮于纯黑背景，让卡片本身有轮廓。</summary>
+    public const uint CardBackArgb = 0xFF2A2F3A;
 
     /// <summary>卡片悬停底色。</summary>
-    public const uint CardHoverArgb = 0xFF2A2D36;
+    public const uint CardHoverArgb = 0xFF3A4152;
 
-    /// <summary>卡片边框。</summary>
-    public const uint CardBorderArgb = 0x33FFFFFF;
+    /// <summary>卡片边框：比原先更亮，黑底上能看清边界。</summary>
+    public const uint CardBorderArgb = 0x66FFFFFF;
 
     /// <summary>卡片选中态边框。</summary>
     public const uint CardBorderActiveArgb = 0xCC6EA8FF;

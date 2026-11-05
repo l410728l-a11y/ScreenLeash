@@ -116,8 +116,8 @@ public static class Metrics
     /// <summary>发丝线宽度（DIP），用于贴边细线描边。</summary>
     public const float HairlineWidth = 1f;
 
-    /// <summary>正文字号（DIP）。</summary>
-    public const float FontSize = 8.5f;
+    /// <summary>正文字号（DIP）。9.5 比原来的 8.5 更易读——用户反馈黑底上"显示不了什么字"。</summary>
+    public const float FontSize = 9.5f;
 
     /// <summary>辅助字号（DIP）。</summary>
     public const float FontSizeSmall = 7.5f;
@@ -154,11 +154,13 @@ public static class Metrics
     public const int CursorProbeIntervalMs = 40;
 
     // ── 透明度 ───────────────────────────────────────────────────
-    /// <summary>收起态窗口不透明度。</summary>
-    public const float CollapsedOpacity = 0.55f;
+    /// <summary>收起态窗口不透明度。1.0 = 不做整窗透明：收起时只有一条亮色绳线，
+    /// 再叠透明度反而把线也削淡了。</summary>
+    public const float CollapsedOpacity = 1f;
 
-    /// <summary>展开态窗口不透明度。</summary>
-    public const float ExpandedOpacity = 0.93f;
+    /// <summary>展开态窗口不透明度。1.0 = 不做整窗透明：卡片和文字必须保持原色，
+    /// 黑底上再降 7% 会明显发灰（用户反馈"显示不了什么字"）。</summary>
+    public const float ExpandedOpacity = 1f;
 
     /// <summary>悬停卡片不透明度。</summary>
     public const float CardHoverOpacity = 1f;
