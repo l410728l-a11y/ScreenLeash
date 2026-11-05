@@ -37,6 +37,9 @@ public sealed class LeashForm : Form
     private Point _pressPoint;
     private bool _dragging;
     private bool _dropTarget;
+
+    /// <summary>外部正拖东西靠近（还没进窗口）：据此画落点底框。纯悬停查看时为 false，不画框。</summary>
+    private bool _dragApproach;
     private float _lastOpacity = Metrics.CollapsedOpacity;
 
     /// <summary>悬停放大预览的延迟定时器：停够 <see cref="Metrics.PreviewDelayMs"/> 才弹，避免划过就闪。</summary>
@@ -129,8 +132,21 @@ public sealed class LeashForm : Form
         }
 
         var area = _slot.Screen.WorkingArea;
-        var inZone = EdgeGeometry.IsCursorInTriggerZone(Edge, area, Dpi, cursor);
         var insideWindow = Bounds.Contains(cursor);
+
+        // 拖拽靠近时用更宽的感应区（DragApproachZone），并画落点底框；
+        // 纯悬停仍用窄区且不画框——用户要求「放上去查看时保持没有底框」。
+        var zonePx = leftButtonDown
+            ? Metrics.Px(Metrics.DragApproachZone, Dpi)
+            : Metrics.Px(Metrics.EdgeTriggerZone, Dpi);
+        var inZone = EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
+
+        var approaching = leftButtonDown && inZone && !insideWindow;
+        if (approaching != _dragApproach)
+        {
+            _dragApproach = approaching;
+            Invalidate();
+        }
 
         SetState(inZone || insideWindow ? LeashVisualState.Hover : LeashVisualState.Idle);
     }
@@ -251,12 +267,12 @@ public sealed class LeashForm : Form
     {
         // 常态**什么都不画**：那些像素必须保持纯洋红，Windows 才会抠成全透明、
         // 让壁纸透出来。只有拖入经过时才铺一层不透明深蓝作为落点提示。
-        if (!_dropTarget)
+        if (!_dropTarget && !_dragApproach)
         {
             return;
         }
 
-        using var brush = new SolidBrush(Theme.SurfaceHover);
+        using var brush = new SolidBrush(_dropTarget ? Theme.SurfaceHover : Theme.DragApproach);
         g.FillRectangle(brush, client);
     }
 
@@ -264,46 +280,30 @@ public sealed class LeashForm : Form
     /// 绳子本体：沿边的一条轻微下垂的贝塞尔曲线，代替原来贴边的一条直线。
     /// 下垂量由 <see cref="Metrics.RopeSagDip"/> 控制（收起态只有 6px 高，弧很小；展开后更明显）。
     /// </summary>
+    /// <summary>
+    /// 绳子本体：贴边的一条直线（用户反馈弧线不好看，改回直线）。
+    /// 用调用方已设好的 <see cref="SmoothingMode.None"/> 绘制，避免边缘与 TransparencyKey 的洋红混出花边。
+    /// </summary>
     private void DrawRopeLine(Graphics g, Rectangle client)
     {
-        var sag = Metrics.PxFloat(Metrics.RopeSagDip, Dpi);
         var inset = Metrics.PxFloat(Metrics.RopeEdgeInset, Dpi);
+        using var pen = new Pen(Theme.EdgeHighlight, Metrics.PxFloat(Metrics.RopeStrokeWidth, Dpi));
 
-        using var path = new GraphicsPath();
         switch (Edge)
         {
-            case EdgeKind.Right:
-                path.AddBezier(
-                    new PointF(client.Right - inset, client.Top),
-                    new PointF(client.Right - inset - sag, client.Height * Metrics.RopeCuspRatioNear),
-                    new PointF(client.Right - inset - sag, client.Height * Metrics.RopeCuspRatioFar),
-                    new PointF(client.Right - inset, client.Bottom));
-                break;
             case EdgeKind.Left:
-                path.AddBezier(
-                    new PointF(client.Left + inset, client.Top),
-                    new PointF(client.Left + inset + sag, client.Height * Metrics.RopeCuspRatioNear),
-                    new PointF(client.Left + inset + sag, client.Height * Metrics.RopeCuspRatioFar),
-                    new PointF(client.Left + inset, client.Bottom));
+                g.DrawLine(pen, inset, client.Top, inset, client.Bottom);
+                break;
+            case EdgeKind.Right:
+                g.DrawLine(pen, client.Right - inset, client.Top, client.Right - inset, client.Bottom);
                 break;
             case EdgeKind.Top:
-                path.AddBezier(
-                    new PointF(client.Left, client.Top + inset),
-                    new PointF(client.Width * Metrics.RopeCuspRatioNear, client.Top + inset + sag),
-                    new PointF(client.Width * Metrics.RopeCuspRatioFar, client.Top + inset + sag),
-                    new PointF(client.Right, client.Top + inset));
+                g.DrawLine(pen, client.Left, inset, client.Right, inset);
                 break;
             default:
-                path.AddBezier(
-                    new PointF(client.Left, client.Bottom - inset),
-                    new PointF(client.Width * Metrics.RopeCuspRatioNear, client.Bottom - inset - sag),
-                    new PointF(client.Width * Metrics.RopeCuspRatioFar, client.Bottom - inset - sag),
-                    new PointF(client.Right, client.Bottom - inset));
+                g.DrawLine(pen, client.Left, client.Bottom - inset, client.Right, client.Bottom - inset);
                 break;
         }
-
-        using var pen = new Pen(Theme.EdgeHighlight, Metrics.PxFloat(Metrics.RopeStrokeWidth, Dpi));
-        g.DrawPath(pen, path);
     }
 
     // ── 鼠标 ─────────────────────────────────────────────────────
@@ -433,6 +433,12 @@ public sealed class LeashForm : Form
         }
 
         var item = items[index];
+
+        // 删除前先收起预览并停掉计时：否则预览窗会一直停在屏幕上，
+        // 看起来像"删了但没消失"（用户反馈：预览卡在上面消不掉）。
+        SchedulePreview(-1);
+        _hoverIndex = -1;
+
         try
         {
             await _store.RemoveAsync(item.Id).ConfigureAwait(true);

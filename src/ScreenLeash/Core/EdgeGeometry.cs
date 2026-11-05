@@ -110,8 +110,16 @@ public static class EdgeGeometry
     /// 用于「拖近/靠近即弹出」判定。触发带以工作区为界裁剪。
     /// </summary>
     public static bool IsCursorInTriggerZone(EdgeKind edge, Rectangle workingArea, int dpi, Point cursor)
+        => IsCursorInTriggerZone(edge, workingArea, cursor, Metrics.Px(Metrics.EdgeTriggerZone, dpi));
+
+    /// <summary>
+    /// 可指定感应带宽度的重载：拖拽靠近时用更宽的区（<see cref="Metrics.DragApproachZone"/>），
+    /// 让用户能看到"能放这里"的提示，而不是必须贴到边上才响应。
+    /// </summary>
+    /// <param name="zonePx">感应带宽度（已换算成像素）。</param>
+    public static bool IsCursorInTriggerZone(EdgeKind edge, Rectangle workingArea, Point cursor, int zonePx)
     {
-        int zone = Metrics.Px(Metrics.EdgeTriggerZone, dpi);
+        int zone = zonePx;
         var (alongStart, alongSpan) = AlongEdge(edge, workingArea);
         var alongEnd = alongStart + alongSpan;
         bool insideAlong = edge switch

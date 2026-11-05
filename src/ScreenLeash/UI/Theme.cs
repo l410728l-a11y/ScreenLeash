@@ -37,6 +37,10 @@ public static class Theme
     /// 半透明填充会与 TransparencyKey 的洋红混合出花边，所以这里必须给实色。</summary>
     public const uint SurfaceHoverArgb = 0xFF1E3A5F;
 
+    /// <summary>**拖拽靠近**（还没进入窗口）时的落点底框：不透明灰蓝，
+    /// 告诉用户"松手就放这里"。悬停查看时不画，避免挡视线。</summary>
+    public const uint DragApproachArgb = 0xFF2A3040;
+
     /// <summary>绳线颜色：亮天蓝，在黑色背景上清晰可见。</summary>
     public const uint EdgeHighlightArgb = 0xCC4FC3F7;
 
@@ -84,6 +88,8 @@ public static class Theme
     public static Color SurfaceOpaque => FromArgb(SurfaceOpaqueArgb);
 
     public static Color SurfaceHover => FromArgb(SurfaceHoverArgb);
+
+    public static Color DragApproach => FromArgb(DragApproachArgb);
 
     public static Color EdgeHighlight => FromArgb(EdgeHighlightArgb);
 
