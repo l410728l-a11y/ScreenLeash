@@ -23,7 +23,8 @@ namespace ScreenLeash.Interop;
 ///
 /// <para><b>线程模型</b>：钩子装在专用后台 STA 线程上并跑自己的消息泵（低层钩子必须在带
 /// 消息泵的线程上安装；P2 实测：hook thread=4 → PostMessage → sink thread=1）。
-/// 回调只做三件事：判 Ctrl+V、<see cref="FocusProbe.ShouldTakeOverPaste"/>、PostMessage。
+/// 回调只做三件事：判 Ctrl+V、<see cref="LeashSnapshot.HitTest"/> 命中绳子（命中即接管，
+/// 未命中才看 <see cref="FocusProbe.ShouldTakeOverPaste"/>）、PostMessage。
 /// 回调内**禁止** Clipboard/File/跨进程 API、lock、无界循环——P4 实测回调耗时稳态
 /// 9–32μs、avg=54.2μs、p99=913.2μs，远低于 LowLevelHooksTimeout（秒级），
 /// 性能口径是「零阻塞」而非「零分配」。</para>
