@@ -1,0 +1,59 @@
+// 合规夹具：真实自绘代码（Px 换算 / Pen 线宽 / Font 字号 / FillRectangle 偏移 / Math.Max 步长），
+// 尺寸全部来自 Metrics、颜色全部来自 Theme，扫描器必须报 0 违规。
+// 本文件不参与编译（.cs.fixture 扩展名），只作为扫描器测试的输入。
+using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using ScreenLeash.Core;
+using ScreenLeash.UI;
+
+internal sealed class RawPixelCleanFixture
+{
+    public Rectangle LayoutFor(EdgeKind edge, Rectangle workingArea, int dpi, LeashVisualState state) =>
+        EdgeGeometry.Compute(edge, workingArea, dpi, state);
+
+    public static int NextStep(int current, int target, int dpi)
+    {
+        int delta = Math.Abs(target - current);
+        int step = Math.Max(Metrics.Px(Metrics.MinEaseStep, dpi), delta / Metrics.EaseDivisor);
+        return current < target ? Math.Min(target, current + step) : Math.Max(target, current - step);
+    }
+
+    public void Paint(Graphics g, Rectangle bounds, int dpi, bool hovered, string text)
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        int inset = Metrics.Px(Metrics.Inset, dpi);
+        int inner = bounds.Width - inset - inset;
+        int cardWidth = Math.Max(Metrics.Px(Metrics.ThumbMinSize, dpi), inner);
+        int cardHeight = Math.Max(Metrics.Px(Metrics.ThumbMinSize, dpi), bounds.Height - inset - inset);
+        var card = new Rectangle(bounds.X + inset, bounds.Y + inset, cardWidth, cardHeight);
+
+        using var borderPen = new Pen(Theme.CardBorder, Metrics.PxFloat(Metrics.StrokeWidth, dpi));
+        using var hairlinePen = new Pen(Theme.EdgeHighlight, Metrics.PxFloat(Metrics.HairlineWidth, dpi));
+        using var backBrush = new SolidBrush(hovered ? Theme.CardHover : Theme.CardBack);
+
+        g.FillRectangle(backBrush, card);
+        g.DrawRectangle(borderPen, card);
+        g.DrawLine(hairlinePen, bounds.X + inset, bounds.Y + inset, bounds.X + inset, bounds.Bottom - inset);
+
+        int thumbInset = Metrics.Px(Metrics.ThumbInset, dpi);
+        int thumbSize = Metrics.Px(Metrics.ThumbSize, dpi);
+        var thumb = new Rectangle(card.X + thumbInset, card.Y + thumbInset, thumbSize, thumbSize);
+        using var thumbPen = new Pen(Theme.CardBorderActive, Metrics.PxFloat(Metrics.HairlineWidth, dpi));
+        g.DrawRectangle(thumbPen, thumb);
+
+        int textX = thumb.Right + Metrics.Px(Metrics.ThumbGap, dpi);
+        int lineHeight = Metrics.Px(Metrics.LineHeight, dpi);
+        using var font = new Font(Theme.UiFontFamily, Metrics.PxFloat(Metrics.FontSize, dpi), FontStyle.Regular);
+        using var textBrush = new SolidBrush(Theme.TextPrimary);
+        for (int line = 0; line < Metrics.TextLines; line++)
+        {
+            var origin = new PointF(textX, card.Y + Metrics.Px(Metrics.CardPadding, dpi) + lineHeight * line);
+            g.DrawString(text, font, textBrush, origin);
+        }
+
+        using var radiusBrush = new SolidBrush(Theme.DropHighlight);
+        g.FillEllipse(radiusBrush, card.X, card.Y, Metrics.Px(Metrics.CornerRadiusSmall, dpi), Metrics.Px(Metrics.CornerRadiusSmall, dpi));
+    }
+}

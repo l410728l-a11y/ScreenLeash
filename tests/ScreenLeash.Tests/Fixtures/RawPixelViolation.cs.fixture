@@ -1,0 +1,44 @@
+// 违规夹具：模拟「未走 Metrics/Theme 的自绘代码」，扫描器必须报出全部裸像素向量。
+// 本文件不参与编译（.cs.fixture 扩展名），只作为扫描器测试的输入，故意保留缺陷。
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+
+internal sealed class RawPixelViolationFixture
+{
+    private const int CollapsedWidth = 8;
+    private const int ExpandedWidth = 148;
+    private int _targetWidth = 8;
+
+    public float Opacity { get; set; } = 0.93f;
+
+    public void Layout(Rectangle workingArea, Point cursor)
+    {
+        bool nearEdge = cursor.X >= workingArea.Right - 44;
+        _targetWidth = nearEdge ? ExpandedWidth : CollapsedWidth;
+        int step = Math.Max(8, Math.Abs(_targetWidth - CollapsedWidth) / 3);
+        int next = _targetWidth < CollapsedWidth ? _targetWidth : _targetWidth - step;
+        SetBounds(workingArea.Right - next, workingArea.Top, next, workingArea.Height);
+    }
+
+    public void Paint(Graphics g, int width, int height)
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var pen = new Pen(Color.FromArgb(70, 255, 255, 255), 2f);
+        g.DrawLine(pen, 1, 0, 1, height);
+        if (width > 60)
+        {
+            using var brush = new SolidBrush(Color.FromArgb(24, 26, 32));
+            g.FillRectangle(brush, 4, 0, width - 6, height);
+            using var font = new Font("Segoe UI", 8.5f);
+            g.DrawString("leash", font, brush, new PointF(8, 8));
+            var anchor = new Point(4, 40);
+            _ = anchor;
+        }
+    }
+
+    private void SetBounds(int x, int y, int w, int h)
+    {
+        _ = (x, y, w, h);
+    }
+}
