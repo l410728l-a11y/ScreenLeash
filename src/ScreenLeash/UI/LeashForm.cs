@@ -840,7 +840,18 @@ public sealed class LeashForm : Form
     {
         base.OnDragEnter(drgevent);
 
-        DragDiag("DragEnter isDragging=" + DragOut.IsDragging + " hasFileDrop=" + (drgevent.Data?.GetDataPresent(DataFormats.FileDrop) == true));
+        // 枚举格式可能抛（某些数据源在拖放早期不可用），不能因此影响拖入本身。
+        try
+        {
+            DragDiag("DragEnter isDragging=" + DragOut.IsDragging
+                + " hasFileDrop=" + (drgevent.Data?.GetDataPresent(DataFormats.FileDrop) == true)
+                + " effect=" + DragIn.EffectsFor(drgevent.Data)
+                + " formats=[" + string.Join("|", drgevent.Data?.GetFormats() ?? Array.Empty<string>()) + "]");
+        }
+        catch
+        {
+            // 只为诊断，读不到就跳过。
+        }
 
         // 自己拖出的卡片**也允许进入**：拖到对侧要能弹底框、要能落下去做"移动"。
         // 拦截只能放在 OnDragDrop 里（按移动处理），放在这里会导致拖不过去。
