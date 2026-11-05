@@ -309,16 +309,17 @@ public sealed class PasteHook : IDisposable
         (GetAsyncKeyState(virtualKey) & InteropConstants.KeyStatePressed) != 0;
 
     /// <summary>
-    /// 回调内的全部业务：判前台是否该接管 → 快照命中得边 → PostMessage 投递。
+    /// 回调内的全部业务：<b>先判光标是否落在已展开的绳子上</b>（命中即无条件接管），
+    /// 未命中时再看前台是否明确没有可粘贴目标 → PostMessage 投递。
     /// 只有「真的投递成功」才返回 true（才允许吞键）；任何一步失败都放行给系统。
+    ///
+    /// <para><b>顺序不能反</b>：绳子窗口是 WS_EX_NOACTIVATE，前台始终是被的程序。
+    /// 若先判 <see cref="FocusProbe.ShouldTakeOverPaste"/>，只要前台是浏览器/记事本/微信这类
+    /// 有粘贴目标的应用就会直接放行，永远走不到命中判定——用户「鼠标放在绳子上按 Ctrl+V
+    /// 却粘不上去」正是这个顺序造成的。</para>
     /// </summary>
     private bool TryPostPasteRequest()
     {
-        if (!FocusProbe.ShouldTakeOverPaste())
-        {
-            return false;
-        }
-
         long sink = Volatile.Read(ref _sink);
         if (sink == 0)
         {
@@ -331,8 +332,18 @@ public sealed class PasteHook : IDisposable
             return false;
         }
 
-        // null = 未命中任何展开态绳子，接收方回退到 LeashHost.ActiveEdge。
-        var edge = _slot.Current.HitTest(new Point(cursor.X, cursor.Y));
+        var point = new Point(cursor.X, cursor.Y);
+
+        // ① 命中已展开的绳子：无条件接管，不看前台是谁。
+        //    null = 未命中任何展开态绳子，接收方回退到 LeashHost.ActiveEdge。
+        var edge = _slot.Current.HitTest(point);
+
+        // ② 未命中绳子时，只有前台确实无处可粘才接管。
+        if (!PasteTargetPolicy.ShouldCapture(edge, edge is null && FocusProbe.ShouldTakeOverPaste()))
+        {
+            return false;
+        }
+
         return PostMessageW(
             new IntPtr(sink),
             InteropConstants.WmAppPaste,

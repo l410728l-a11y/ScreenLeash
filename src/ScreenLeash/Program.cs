@@ -140,6 +140,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     internal static TrayApplicationContext? Current { get; private set; }
 
+    /// <summary>托盘与绳子都已初始化完成；之前调 <see cref="ShowBalloon"/> 会被静默丢弃。</summary>
+    internal bool IsReady { get; private set; }
+
     internal TrayApplicationContext()
     {
         // 先把 UI 线程身份记下来：气泡提示可能从后台线程发起（剪贴板 STA 读取的续接、
@@ -204,13 +207,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
         UpdateTooltip();
 
         ReportPasteFallbackState();
+        IsReady = true;
     }
 
     internal static void ShowBalloon(string title, string text)
     {
         TrayApplicationContext? current = Current;
-        if (current is null)
+        if (current is null || !current.IsReady)
         {
+            // 启动期（LeashHost 构造里的迁移）托盘还没建好，气泡无处可弹。
+            // 这里必须静默丢弃：否则 _trayIcon 还是 null，会抛 NullReferenceException
+            // 打断调用方的迁移流程（crash-20261105.log 里 21:28 那条就是它）。
             return;
         }
 

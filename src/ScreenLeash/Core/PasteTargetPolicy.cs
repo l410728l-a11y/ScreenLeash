@@ -149,6 +149,18 @@ public static class PasteTargetPolicy
     }
 
     /// <summary>
+    /// 是否由绳子接管这次粘贴。<b>优先级：命中绳子就接管，不看前台是谁。</b>
+    ///
+    /// <para>绳子窗口是 WS_EX_NOACTIVATE，前台始终是被的程序。如果先判前台有没有可粘贴目标，
+    /// 只要前台是浏览器/记事本/微信这类应用就会直接放行，永远走不到命中判定——
+    /// 用户「鼠标放在绳子上按 Ctrl+V 却粘不上去」正是这个顺序造成的。</para>
+    /// </summary>
+    /// <param name="leashHit">光标命中的展开态边；未命中为 null。</param>
+    /// <param name="foregroundHasNoPasteTarget">前台确实没有可粘贴目标（仅在未命中时才有意义）。</param>
+    public static bool ShouldCapture(EdgeKind? leashHit, bool foregroundHasNoPasteTarget) =>
+        leashHit is not null || foregroundHasNoPasteTarget;
+
+    /// <summary>
     /// 是否由绳子接管这次粘贴。<paramref name="force"/> 是用户显式强制（例如钩子装好后的
     /// 「无论如何都挂到绳子」），它优先于前台是否有可粘贴目标。
     /// </summary>
