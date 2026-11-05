@@ -11,6 +11,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\probes\run-probes.ps1
 
 环境：Windows 11 26200 / .NET 8.0.427（私有 SDK `C:\Users\Administrator\dotnet-sdk-8`）/ 单屏 2048×1152 / `GetDpiForSystem=96`。
 
+> 注意：`run-probes.ps1` 只自动覆盖 **P2 / P3 / P4**。
+> **P1（passthrough / swallow 对照）依赖探针窗口持有前台焦点，脚本环境里不稳定，需手动跑**（命令见 P1 节）。
+> 因此脚本输出的 `ALL PROBES PASSED` **不包含 P1**，不得据此声称吞键对照已验证。
+> 探针数值随机器负载波动，判据取量级而非单点值；P4 已记录两次运行结果供对照。
+
 ---
 
 ## P1. 低级键盘钩子：可安装 / 可捕获 / 可吞键
@@ -112,6 +117,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\probes\run-probes.ps1
 结论：稳态 **9–32μs**，`avg=54.2μs`，`p99=913.2μs`（首个样本含 JIT 编译）。
 `LowLevelHooksTimeout` 是**秒级**（默认 5000ms = 5,000,000μs），相差 5 个数量级。
 因此：回调内允许调用 `FocusProbe`；正确的性能口径是**零阻塞（每次 < 100μs）**，不是"零分配"。
+
+**复跑记录（同日第二次，经 `run-probes.ps1` P4 阶段）**：
+
+```
+[18:33:49.986] count=60 min=15.1us avg=47.8us p99=869.1us max=869.1us
+[18:33:49.986] COST_PASS
+```
+
+两次同量级（avg 47.8–54.2μs，p99 869.1–913.2μs）；引用时应指明是哪一次，或直接引用本节两行原始输出。
 
 ---
 
