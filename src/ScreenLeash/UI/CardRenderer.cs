@@ -151,7 +151,7 @@ public static class CardRenderer
         var displayName = string.IsNullOrEmpty(fileName) ? "文件" : fileName;
 
         using var extensionFont = new Font(Theme.MonoFontFamily, Metrics.PxFloat(Metrics.FontSizeTitle, dpi), FontStyle.Bold, GraphicsUnit.Pixel);
-        using var nameFont = new Font(Theme.UiFontFamily, Metrics.PxFloat(Metrics.FontSizeSmall, dpi), FontStyle.Regular, GraphicsUnit.Pixel);
+        using var nameFont = new Font(Theme.UiFontFamily, Metrics.PxFloat(Metrics.FontSize, dpi), FontStyle.Regular, GraphicsUnit.Pixel);
         using var extensionBrush = new SolidBrush(Theme.TextSecondary);
         using var nameBrush = new SolidBrush(Theme.TextPrimary);
         using var format = new StringFormat

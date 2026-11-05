@@ -28,6 +28,9 @@ public static class DragOut
     /// 就会把这次「自己拖自己」当成外部拖入，凭空多出一张卡片（用户报的重复文件）。
     /// </summary>
     public static bool IsDragging { get; private set; }
+
+    /// <summary>正在拖出的卡片 Id。拖到自己身上时用它做「移动」，而不是复制一份新卡片。</summary>
+    public static Guid? DraggingItemId { get; private set; }
     /// <summary>
     /// 发起拖出。必须在 UI 线程、由鼠标按下+移动的事件里调用（<c>DoDragDrop</c> 是同步模态消息循环）。
     /// </summary>
@@ -62,6 +65,7 @@ public static class DragOut
         Image? ownedBitmap = null;
 
         IsDragging = true;
+        DraggingItemId = item.Id;
         try
         {
             // 按卡片类型**只给一种**格式：多格式并给等于把选择权交给目标程序，
@@ -144,6 +148,7 @@ public static class DragOut
         {
             ownedBitmap?.Dispose();
             IsDragging = false;
+            DraggingItemId = null;
         }
     }
 

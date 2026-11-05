@@ -610,14 +610,8 @@ public sealed class LeashForm : Form
     {
         base.OnDragEnter(drgevent);
 
-        // 自己拖出去的卡片落回自己身上（含跨边拖到对侧）不算拖入：
-        // 否则会凭空多出一张卡片，而且新卡片的 BlobName 是 GUID，名字就乱了。
-        if (DragOut.IsDragging)
-        {
-            drgevent.Effect = DragDropEffects.None;
-            return;
-        }
-
+        // 自己拖出的卡片**也允许进入**：拖到对侧要能弹底框、要能落下去做"移动"。
+        // 拦截只能放在 OnDragDrop 里（按移动处理），放在这里会导致拖不过去。
         _dropTarget = true;
         drgevent.Effect = DragIn.EffectsFor(drgevent.Data);
         SchedulePreview(-1);
@@ -629,8 +623,9 @@ public sealed class LeashForm : Form
     {
         base.OnDragOver(drgevent);
 
+        // 自己拖出的卡片给 Move 效果：落到本窗口是「移动到这边」，不是复制一份。
         drgevent.Effect = DragOut.IsDragging
-            ? DragDropEffects.None
+            ? DragDropEffects.Move
             : DragIn.EffectsFor(drgevent.Data);
     }
 
@@ -647,11 +642,19 @@ public sealed class LeashForm : Form
     {
         base.OnDragDrop(drgevent);
 
-        // 自己拖出的卡片松手落回绳子：直接忽略，既不建卡也不吞掉。
+        // 自己拖出的卡片落到绳子上 = **移动**：拖到对侧就换边，拖回原边则无操作。
+        // 绝不能走下面的「拖入」路径，否则会复制一份 blob，名字也变成 GUID。
         if (DragOut.IsDragging)
         {
-            drgevent.Effect = DragDropEffects.None;
+            var draggingId = DragOut.DraggingItemId;
+            if (draggingId is not null)
+            {
+                _ = _store.MoveAsync(draggingId.Value, Edge);
+            }
+
+            drgevent.Effect = DragDropEffects.Move;
             _dropTarget = false;
+            SchedulePreview(-1);
             Invalidate();
             return;
         }
