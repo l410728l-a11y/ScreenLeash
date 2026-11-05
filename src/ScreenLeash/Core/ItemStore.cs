@@ -214,14 +214,16 @@ public sealed class ItemStore : IDisposable
         {
             return await RunOnUiAsync(() =>
             {
+                var displayName = Path.GetFileName(sourcePath);
+
                 if (isImage)
                 {
                     // 图片文件必须走 Image 卡片：生成缩略图，卡片区才会显示预览而不是文件名。
                     var thumbName = BuildThumbnailCore(blobFull);
-                    return CommitAddCore(Item.CreateImage(blobName, thumbName, byteSize, edge));
+                    return CommitAddCore(Item.CreateImage(blobName, thumbName, byteSize, edge, displayName));
                 }
 
-                return CommitAddCore(Item.CreateFile(blobName, thumbName: null, byteSize, edge));
+                return CommitAddCore(Item.CreateFile(blobName, thumbName: null, byteSize, edge, displayName));
             }).ConfigureAwait(false);
         }
         catch

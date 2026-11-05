@@ -43,6 +43,12 @@ public sealed class Item
     /// <summary>blobs/ 下的相对文件名；Kind=Text 时为 null。不得写入绝对路径。</summary>
     public string? BlobName { get; set; }
 
+    /// <summary>
+    /// 拖入时的原始文件名（只用于展示与拖出，不参与文件定位）。
+    /// blob 名是 GUID + 扩展名，没有它卡片上显示的就是 GUID；为空时回退到 <see cref="BlobName"/>（兼容旧数据）。
+    /// </summary>
+    public string? DisplayName { get; set; }
+
     /// <summary>thumbs/ 下的相对文件名；无缩略图（纯文本）时为 null。</summary>
     public string? ThumbName { get; set; }
 
@@ -89,7 +95,7 @@ public sealed class Item
         return item;
     }
 
-    public static Item CreateImage(string blobName, string? thumbName, long byteSize, EdgeKind edge)
+    public static Item CreateImage(string blobName, string? thumbName, long byteSize, EdgeKind edge, string? displayName = null)
     {
         if (string.IsNullOrWhiteSpace(blobName))
         {
@@ -102,12 +108,13 @@ public sealed class Item
             Text = string.Empty,
             BlobName = blobName,
             ThumbName = thumbName,
+            DisplayName = displayName,
             ByteSize = Math.Max(0, byteSize),
             Edge = edge,
         };
     }
 
-    public static Item CreateFile(string blobName, string? thumbName, long byteSize, EdgeKind edge)
+    public static Item CreateFile(string blobName, string? thumbName, long byteSize, EdgeKind edge, string? displayName = null)
     {
         if (string.IsNullOrWhiteSpace(blobName))
         {
@@ -120,6 +127,7 @@ public sealed class Item
             Text = string.Empty,
             BlobName = blobName,
             ThumbName = thumbName,
+            DisplayName = displayName,
             ByteSize = Math.Max(0, byteSize),
             Edge = edge,
         };

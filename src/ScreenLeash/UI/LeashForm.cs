@@ -57,7 +57,11 @@ public sealed class LeashForm : Form
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Theme.SurfaceOpaque;
+        // 像素级透明：TransparencyKey 会把这个颜色的像素抠成全透明（连鼠标命中也穿透），
+        // 于是卡片之间、绳线上下的空隙都是真的透出壁纸，而不是一层"近黑底色"。
+        // 代价：完全透明的像素不接收拖放——拖东西要落在卡片上（缝隙只有 6px 宽，很难正好落进去）。
+        BackColor = Theme.TransparencyKey;
+        TransparencyKey = Theme.TransparencyKey;
         DoubleBuffered = true;
         AllowDrop = true;
         Text = "ScreenLeash";
@@ -209,10 +213,12 @@ public sealed class LeashForm : Form
             return;
         }
 
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-
+        // 背景不画：TransparencyKey 区域必须保持纯洋红，Windows 才会把那些像素抠成全透明。
+        // 绳线用不带抗锯齿的绘制，避免边缘与洋红混出花边。
+        g.SmoothingMode = SmoothingMode.None;
         DrawSurface(g, client);
         DrawRopeLine(g, client);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
 
         var items = _store.ForEdge(Edge);
         if (items.Count == 0)
@@ -243,16 +249,14 @@ public sealed class LeashForm : Form
     /// </summary>
     private void DrawSurface(Graphics g, Rectangle client)
     {
-        var inner = _dropTarget ? Theme.SurfaceHover : Theme.Surface;
-        var (from, to, angle) = Edge switch
+        // 常态**什么都不画**：那些像素必须保持纯洋红，Windows 才会抠成全透明、
+        // 让壁纸透出来。只有拖入经过时才铺一层不透明深蓝作为落点提示。
+        if (!_dropTarget)
         {
-            EdgeKind.Left => (inner, Color.Transparent, Metrics.GradientAngleRightward),
-            EdgeKind.Right => (Color.Transparent, inner, Metrics.GradientAngleRightward),
-            EdgeKind.Top => (inner, Color.Transparent, Metrics.GradientAngleDownward),
-            _ => (Color.Transparent, inner, Metrics.GradientAngleDownward),
-        };
+            return;
+        }
 
-        using var brush = new LinearGradientBrush(client, from, to, angle);
+        using var brush = new SolidBrush(Theme.SurfaceHover);
         g.FillRectangle(brush, client);
     }
 

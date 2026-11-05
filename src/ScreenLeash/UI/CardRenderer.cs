@@ -94,7 +94,7 @@ public static class CardRenderer
         return item.Kind switch
         {
             Kind.Text => item.Text ?? string.Empty,
-            _ => Path.GetFileName(item.BlobName ?? string.Empty),
+            _ => item.DisplayName ?? Path.GetFileName(item.BlobName ?? string.Empty),
         };
     }
 
@@ -146,7 +146,7 @@ public static class CardRenderer
 
     private static void DrawFileCard(Graphics g, Rectangle inner, Item item, int dpi)
     {
-        var fileName = Path.GetFileName(item.BlobName ?? string.Empty);
+        var fileName = item.DisplayName ?? Path.GetFileName(item.BlobName ?? string.Empty);
         var extension = Path.GetExtension(fileName);
         var displayName = string.IsNullOrEmpty(fileName) ? "文件" : fileName;
 

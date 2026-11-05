@@ -20,6 +20,11 @@ public static class Theme
     public const string MonoFontFamily = "Consolas";
 
     // ── 窗口/绳子 ─────────────────────────────────────────────────
+    /// <summary>透明键色：Windows 会把窗口里**完全等于这个颜色**的像素抠成全透明
+    /// （连鼠标命中也一起穿透）。选洋红是因为它不会被画到别处。
+    /// 副作用：抗锯齿边缘会与洋红混合出花边——所以绳线用不带抗锯齿的绘制。</summary>
+    public const uint TransparencyKeyArgb = 0xFFFF00FF;
+
     /// <summary>绳子本体底色：**几乎全透明**，只给鼠标一个极弱的区域暗示。
     /// 原先 alpha 242 的深灰面板在纯黑桌面上就是一大块"阴影"，挡住后面的内容。</summary>
     public const uint SurfaceArgb = 0x141C1E24;
@@ -28,8 +33,9 @@ public static class Theme
     /// 在黑色壁纸上几乎看不出窗口边界；真正可见的元素只有卡片和绳线。</summary>
     public const uint SurfaceOpaqueArgb = 0xFF0B0C10;
 
-    /// <summary>拖入经过时的提示底色：淡蓝，不恢复成"大阴影"。</summary>
-    public const uint SurfaceHoverArgb = 0x402A6ED8;
+    /// <summary>拖入经过时的提示底色：**不透明**深蓝。
+    /// 半透明填充会与 TransparencyKey 的洋红混合出花边，所以这里必须给实色。</summary>
+    public const uint SurfaceHoverArgb = 0xFF1E3A5F;
 
     /// <summary>绳线颜色：亮天蓝，在黑色背景上清晰可见。</summary>
     public const uint EdgeHighlightArgb = 0xCC4FC3F7;
@@ -72,6 +78,8 @@ public static class Theme
 
     // ── 颜色访问器 ────────────────────────────────────────────────
     public static Color Surface => FromArgb(SurfaceArgb);
+
+    public static Color TransparencyKey => FromArgb(TransparencyKeyArgb);
 
     public static Color SurfaceOpaque => FromArgb(SurfaceOpaqueArgb);
 

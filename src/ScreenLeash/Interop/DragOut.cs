@@ -171,7 +171,7 @@ public static class DragOut
             return null;
         }
 
-        return System.IO.Path.GetFileName(item.BlobName);
+        return item.DisplayName ?? System.IO.Path.GetFileName(item.BlobName);
     }
 
     private static Bitmap? TryLoadBitmap(string? thumbFullPath, Thumbnailer thumbnails)
