@@ -207,8 +207,8 @@ public sealed class LeashForm : Form
         // 而桌面图标常排在屏幕顶部/底部，用它会漏掉这些位置。
         if (justPressed)
         {
-            // 阈值取展开区的 2 倍：140dip 实测偏小，用户在边缘附近按下时仍会弹。
-            var nearPx = Metrics.Px(Metrics.ExpandedThickness, Dpi) << 1;
+            // 冻结宽度取 Metrics.DragFreezeWidth（当前 400dip）：140 太小、280 仍差一点。
+            var nearPx = Metrics.Px(Metrics.DragFreezeWidth, Dpi);
             var distance = Edge switch
             {
                 EdgeKind.Left => Math.Abs(cursor.X - area.Left),
