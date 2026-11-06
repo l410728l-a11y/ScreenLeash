@@ -204,13 +204,14 @@ public sealed class LeashForm : Form
         // 而桌面图标常排在屏幕顶部/底部，用它会漏掉这些位置——这正是上一版没生效的原因。
         if (leftButtonDown && !_prevLeftDown)
         {
-            var nearPx = Metrics.Px(Metrics.ExpandedThickness, Dpi);
+            // 阈值取展开区的 2 倍：140dip 实测偏小，用户在边缘附近按下时仍会弹。
+            var nearPx = Metrics.Px(Metrics.ExpandedThickness, Dpi) << 1;
             var distance = Edge switch
             {
                 EdgeKind.Left => Math.Abs(cursor.X - area.Left),
                 EdgeKind.Right => Math.Abs(area.Right - cursor.X),
-                EdgeKind.Top => Math.Abs(cursor.Y - area.Top),
-                _ => Math.Abs(area.Bottom - cursor.Y),
+                // 绳子只用左右两条边；顶/底边默认不启用，不参与冻结判定。
+                _ => int.MaxValue,
             };
 
             _dragFrozen = insideWindow || distance <= nearPx;
