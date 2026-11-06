@@ -195,7 +195,11 @@ public sealed class LeashForm : Form
             : Metrics.Px(Metrics.EdgeTriggerZone, Dpi);
         var inZone = EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
 
-        var approaching = leftButtonDown && inZone && !insideWindow;
+        // 「靠近就弹」已停用：它判据是"左键按下 + 距边 90dip 内"，
+        // 无法区分"拖要挂上去的东西"和"拖桌面图标/文件经过屏幕边缘"，
+        // 后者会让绳子莫名弹开挡住正常操作（用户反馈）。
+        // 外部拖入仍由 OnDragEnter 处理 —— 真正进入窗口时才弹，够用且不误伤。
+        var approaching = false;
         if (approaching != _dragApproach)
         {
             _dragApproach = approaching;
@@ -969,9 +973,11 @@ public sealed class LeashForm : Form
     {
         base.OnDragOver(drgevent);
 
-        // 自己拖出的卡片给 Move 效果：落到本窗口是「移动到这边」，不是复制一份。
+        // 必须和源端 DoDragDrop 允许的效果**完全一致**：
+        // 源只允许 Copy（DragOut.cs:126 的 DoDragDrop(data, Copy)），
+        // 这里若返回 Move，OLE 判定不匹配 → 光标变成禁止符号、松手也落不下去。
         drgevent.Effect = DragOut.IsDragging
-            ? DragDropEffects.Move
+            ? DragDropEffects.Copy
             : DragIn.EffectsFor(drgevent.Data);
     }
 
