@@ -188,11 +188,13 @@ public sealed class LeashForm : Form
         var area = _slot.Screen.WorkingArea;
         var insideWindow = Bounds.Contains(cursor);
 
-        // 拖拽靠近时用更宽的感应区（DragApproachZone），并画落点底框；
-        // 纯悬停仍用窄区且不画框——用户要求「放上去查看时保持没有底框」。
-        var zonePx = leftButtonDown
-            ? Metrics.Px(Metrics.DragApproachZone, Dpi)
-            : Metrics.Px(Metrics.EdgeTriggerZone, Dpi);
+        // 统一用窄区：leftButtonDown 时**不放大**。
+        // 之前放大到 90dip 会让"拖桌面图标/文件经过屏幕边缘"也被判成靠近，
+        // 于是窗口反复展开/收起 —— 每轮都要 SetBounds 并重绘一个
+        // TopMost + TransparencyKey 的分层窗口，25 次/秒地抢 CPU/GPU，
+        // 把整个桌面拖慢（表现就是右键菜单弹出变慢）。
+        // 90dip 只保留给 PollDrag 里的磁铁吸附，那是"拖自己卡片"的场景，不会误伤。
+        var zonePx = Metrics.Px(Metrics.EdgeTriggerZone, Dpi);
         var inZone = EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
 
         // 「靠近就弹」已停用：它判据是"左键按下 + 距边 90dip 内"，
