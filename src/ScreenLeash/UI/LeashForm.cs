@@ -188,14 +188,16 @@ public sealed class LeashForm : Form
         var area = _slot.Screen.WorkingArea;
         var insideWindow = Bounds.Contains(cursor);
 
-        // 统一用窄区：leftButtonDown 时**不放大**。
-        // 之前放大到 90dip 会让"拖桌面图标/文件经过屏幕边缘"也被判成靠近，
-        // 于是窗口反复展开/收起 —— 每轮都要 SetBounds 并重绘一个
-        // TopMost + TransparencyKey 的分层窗口，25 次/秒地抢 CPU/GPU，
-        // 把整个桌面拖慢（表现就是右键菜单弹出变慢）。
-        // 90dip 只保留给 PollDrag 里的磁铁吸附，那是"拖自己卡片"的场景，不会误伤。
+        // 只有两种情况允许"因为靠近而展开"：
+        //   1) 没按鼠标 —— 纯悬停查看（用户要的"靠近弹出"）
+        //   2) 按住左键，且按下点就在本窗口的卡片上 —— 正在拖自己的卡片
+        // 按住左键但按下点不在本窗口（拖桌面图标、拖别的程序的文字/文件经过边缘）时
+        // 一律不展开，否则绳子会冒出来挡住正常操作。这类外部拖入由 OnDragEnter 处理。
+        var draggingOwnCard = leftButtonDown && _pressedIndex >= 0;
+        var allowExpand = !leftButtonDown || draggingOwnCard;
+
         var zonePx = Metrics.Px(Metrics.EdgeTriggerZone, Dpi);
-        var inZone = EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
+        var inZone = allowExpand && EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
 
         // 「靠近就弹」已停用：它判据是"左键按下 + 距边 90dip 内"，
         // 无法区分"拖要挂上去的东西"和"拖桌面图标/文件经过屏幕边缘"，
@@ -208,7 +210,9 @@ public sealed class LeashForm : Form
             Invalidate();
         }
 
-        SetState(inZone || insideWindow ? LeashVisualState.Hover : LeashVisualState.Idle);
+        // insideWindow 也要受 allowExpand 约束：否则窗口一旦展开（140dip），
+        // 拖图标时只要光标还在展开区内就会一直保持展开，等于没修。
+        SetState(allowExpand && (inZone || insideWindow) ? LeashVisualState.Hover : LeashVisualState.Idle);
     }
 
     /// <summary>由宿主每 tick 调用：推进厚度缓动与透明度。</summary>
