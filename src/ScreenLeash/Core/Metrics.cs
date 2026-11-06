@@ -39,7 +39,9 @@ public static class Metrics
 
     /// <summary>拖拽靠近时的感应区（DIP）：比普通悬停的 40 更宽，
     /// 让用户拖东西时有足够空间提前看到「能放这里」的底框，而不是必须贴到边上。</summary>
-    public const int DragApproachZone = 90;
+    /// <summary>拖东西靠近时判定"能挂"的范围。用户反馈 90dip 太窄、要挨得很近才行，放宽到 150dip。
+    /// 只用于拖拽（左键按住且起点不在边缘附近），纯悬停仍用 EdgeTriggerZone，不会跟着变敏感。</summary>
+    public const int DragApproachZone = 150;
 
     // ── 卡片 ─────────────────────────────────────────────────────
     /// <summary>卡片圆角半径（DIP）。</summary>

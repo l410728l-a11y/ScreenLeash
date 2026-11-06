@@ -14,7 +14,7 @@ namespace ScreenLeash.Core;
 /// </summary>
 public sealed class AppSettings
 {
-    public const int SchemaVersion = 2;
+    public const int SchemaVersion = 3;
 
     public const string StartupRegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     public const string StartupValueName = "ScreenLeash";
@@ -28,7 +28,8 @@ public sealed class AppSettings
     public int Version { get; set; } = SchemaVersion;
 
     // ── 绳子 ─────────────────────────────────────────────────────
-    public bool EnableLeft { get; set; } = true;
+    /// <summary>左边默认关闭：用户只要右侧一条。</summary>
+    public bool EnableLeft { get; set; }
 
     /// <summary>上边默认关闭：用户反馈顶边细线会干扰"点文件"等贴顶操作。</summary>
     public bool EnableTop { get; set; }
@@ -134,6 +135,13 @@ public sealed class AppSettings
             {
                 loaded.EnableTop = false;
                 loaded.EnableBottom = false;
+                loaded.Version = 2;
+            }
+
+            // v2 → v3 迁移：用户只要右侧一条（左边那条在左侧整理图标时会挡事）。
+            if (loaded.Version < 3)
+            {
+                loaded.EnableLeft = false;
                 loaded.Version = SchemaVersion;
             }
 

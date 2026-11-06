@@ -367,9 +367,11 @@ public sealed class LeashHost : IDisposable
             // 导致"按下明明命中了卡片，拖到一半却变成 -1"。
             form.PollDrag(cursor, leftDown);
 
-            // 左键按住期间临时取消透明键：透明像素连鼠标命中也穿透，
-            // 会导致纯文本拖入（微信草稿文字）触发不了 DragEnter、也不出底框。
-            form.SetDropOpaque(leftDown);
+            // 只在**收起的细线**上才需要临时取消透明：那时窗口只有 6dip 宽，
+            // 透明像素会让拖放完全穿透、根本收不到 OnDragEnter。
+            // 已经展开（140dip、有卡片）时窗口本身就有大片不透明像素，拖放落上去能正常触发，
+            // 再取消透明只会让整块面板变成近黑——就是"悬浮着看卡片时一按就弹黑框"。
+            form.SetDropOpaque(leftDown && !form.IsExpanded);
             form.Tick();
             if (form.IsExpanded)
             {

@@ -236,7 +236,11 @@ public sealed class LeashForm : Form
             _dragFrozen = false;
         }
 
-        var zonePx = Metrics.Px(Metrics.EdgeTriggerZone, Dpi);
+        // 拖东西靠近时用更宽的判定（DragApproachZone）：用户反馈 40dip 要挨得很近才挂得上。
+        // 纯悬停仍用 EdgeTriggerZone —— 否则鼠标随便靠近边缘就弹，反而更挡事。
+        var draggingFromAway = leftButtonDown && !_dragFrozen;
+        var zonePx = Metrics.Px(
+            draggingFromAway ? Metrics.DragApproachZone : Metrics.EdgeTriggerZone, Dpi);
         var inZone = EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
 
         // 冻结期间保持当前状态不动；只有**真正离开冻结区**才解冻。
