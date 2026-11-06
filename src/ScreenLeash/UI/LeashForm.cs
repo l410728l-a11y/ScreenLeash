@@ -44,6 +44,9 @@ public sealed class LeashForm : Form
     /// <summary>磁铁吸附高亮：别的绳子拖东西过来时本窗口亮起。</summary>
     private bool _magnetHighlight;
 
+    /// <summary>上一次 DrawSurface 是否画了底色（用于只在切换时打日志，避免每帧刷屏）。</summary>
+    private bool _lastDrewSurface;
+
     /// <summary>上一帧左键是否按下（用来检测"刚按下"那一帧）。</summary>
     private bool _prevLeftDown;
 
@@ -408,9 +411,20 @@ public sealed class LeashForm : Form
     /// </summary>
     private void DrawSurface(Graphics g, Rectangle client)
     {
-        // 常态**什么都不画**：那些像素必须保持纯洋红，Windows 才会抠成全透明、
-        // 让壁纸透出来。只有拖入经过时才铺一层不透明深蓝作为落点提示。
-        if (!_dropTarget && !_magnetHighlight)
+        var shouldDraw = _dropTarget || _magnetHighlight;
+
+        // 只在"画/不画"切换时打一次，不刷屏：
+        // 用它区分用户看到的"灰色框"到底是 DrawSurface 的深蓝，还是 SetDropOpaque 的近黑。
+        if (shouldDraw != _lastDrewSurface)
+        {
+            _lastDrewSurface = shouldDraw;
+            DragDiag("DrawSurface " + shouldDraw + " edge=" + Edge
+                + " drop=" + _dropTarget + " magnet=" + _magnetHighlight
+                + " count=" + _store.ForEdge(Edge).Count
+                + " state=" + _state);
+        }
+
+        if (!shouldDraw)
         {
             return;
         }
