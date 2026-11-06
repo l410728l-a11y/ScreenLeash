@@ -15,7 +15,12 @@ public static class Metrics
 
     // ── 绳子（窗口本体）────────────────────────────────────────────
     /// <summary>收起时贴边的细线厚度（DIP）。</summary>
-    public const int CollapsedThickness = 6;
+    /// <summary>收起态的窗口厚度。视觉上仍只画一条 2.5dip 的细线（RopeStrokeWidth），
+    /// 但窗口本身留出这个宽度作为拖放接收区：OLE 只把 DragEnter 发给**光标所在的那个窗口**，
+    /// 窗口只有 6dip 时用户必须精确落到线上才能挂。
+    /// 这条加宽是否真的有效，取决于 TransparencyKey 的透明像素会不会一起把拖放穿透——
+    /// 若无效（拖上去仍无反应），说明必须改用 layered window（每像素 alpha，透明也接收）。</summary>
+    public const int CollapsedThickness = 40;
 
     /// <summary>展开时向屏内伸出的厚度（DIP）。</summary>
     public const int ExpandedThickness = 140;
