@@ -86,6 +86,16 @@ public static class InteropConstants
     /// <summary>WS_EX_NOACTIVATE：点击不抢焦点。</summary>
     public const int WsExNoActivate = 0x08000000;
 
+    /// <summary>WM_NCHITTEST：系统问"这个点归哪个窗口"。</summary>
+    public const int WmNcHitTest = 0x0084;
+
+    /// <summary>HTTRANSPARENT：让鼠标继续去找下面的窗口（等于点击穿透）。
+    /// 只影响鼠标消息，不影响 OLE 拖放——后者由 RegisterDragDrop 按窗口矩形投递。</summary>
+    public const int HtTransparent = -1;
+
+    /// <summary>WM_NCHITTEST 的 lParam 里，X 与 Y 各占的位宽（低 16 位 X、高 16 位 Y）。</summary>
+    public const int HitTestCoordBits = 16;
+
     /// <summary>WS_EX_TOOLWINDOW：不进 Alt+Tab。</summary>
     public const int WsExToolWindow = 0x00000080;
 

@@ -823,6 +823,56 @@ public sealed class LeashForm : Form
         return EdgeLayout.HitTest(slots, location);
     }
 
+    /// <summary>该点是否应该接收鼠标（展开时整面板，收起时只有绳线附近）。</summary>
+    private bool IsInteractiveAt(Point client)
+    {
+        if (!ClientRectangle.Contains(client))
+        {
+            return false;
+        }
+
+        // 展开时整个面板都可交互：卡片点击、滚动、右键菜单都在这一区。
+        if (IsExpanded)
+        {
+            return true;
+        }
+
+        // 收起时只有绳线附近可点，其余交给桌面，避免挡住贴边操作。
+        var inset = Metrics.PxFloat(Metrics.RopeEdgeInset, Dpi);
+        var tolerance = Metrics.PxFloat(Metrics.RopeStrokeWidth, Dpi)
+                        + Metrics.PxFloat(Metrics.RopeHitTolerance, Dpi);
+
+        return Edge switch
+        {
+            EdgeKind.Left => Math.Abs(client.X - inset) <= tolerance,
+            EdgeKind.Right => Math.Abs(client.X - (ClientRectangle.Width - inset)) <= tolerance,
+            EdgeKind.Top => Math.Abs(client.Y - inset) <= tolerance,
+            _ => Math.Abs(client.Y - (ClientRectangle.Height - inset)) <= tolerance,
+        };
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        // 收起窗口为了接收拖放加宽到了 40dip，但**鼠标点击不该跟着变宽**。
+        // 让"不在绳线上的空白区"返回 HTTRANSPARENT，鼠标事件就落到下面的桌面/图标上。
+        //
+        // OLE 拖放不受影响：它由 RegisterDragDrop 按窗口矩形投递，不查 NCHITTEST，
+        // 所以加宽带来的"拖放更容易落上"依然有效，这两件事可以分开。
+        if (m.Msg == InteropConstants.WmNcHitTest)
+        {
+            var packed = m.LParam.ToInt64();
+            var screen = new Point((short)(packed & 0xFFFF), (short)((packed >> InteropConstants.HitTestCoordBits) & 0xFFFF));
+
+            if (!IsInteractiveAt(PointToClient(screen)))
+            {
+                m.Result = (IntPtr)InteropConstants.HtTransparent;
+                return;
+            }
+        }
+
+        base.WndProc(ref m);
+    }
+
     /// <summary>右键删除该位置的卡片（绳子窗口无焦点、无菜单栏，右键是最直接的移除入口）。</summary>
     private async void DeleteAt(int index)
     {

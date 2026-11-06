@@ -88,6 +88,11 @@ public static class Metrics
     /// <summary>绳子描边宽度（DIP）。</summary>
     public const float RopeStrokeWidth = 2.5f;
 
+    /// <summary>收起态下绳线周围多少 DIP 内仍算"可点"（超出就穿透给桌面）。
+    /// 收起窗口为了接收拖放加宽到了 CollapsedThickness，但点击不该跟着变宽——
+    /// 否则会挡住贴边的桌面操作（用户反馈"收回时也跟着变宽了"）。</summary>
+    public const float RopeHitTolerance = 3f;
+
     /// <summary>绳子离窗口边的内缩（DIP），避免线压在窗口边界上被裁掉一半。</summary>
     public const float RopeEdgeInset = 2f;
 
