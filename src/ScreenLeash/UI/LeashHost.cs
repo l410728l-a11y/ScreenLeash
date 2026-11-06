@@ -371,7 +371,12 @@ public sealed class LeashHost : IDisposable
             // 透明像素会让拖放完全穿透、根本收不到 OnDragEnter。
             // 已经展开（140dip、有卡片）时窗口本身就有大片不透明像素，拖放落上去能正常触发，
             // 再取消透明只会让整块面板变成近黑——就是"悬浮着看卡片时一按就弹黑框"。
-            form.SetDropOpaque(leftDown && !form.IsExpanded);
+            //
+            // 但**外部东西正在拖入时**必须一直保持不透明：
+            // 展开成 140dip 后如果恢复透明，那 140dip 里除了 2.5dip 的线全是透明像素，
+            // OLE 会认为光标离开了窗口 → OnDragLeave → 收起 → 又不透明 → 再 DragEnter，
+            // 表现为"可拖入区间闪一下就缩回去"（用户反馈）。
+            form.SetDropOpaque(leftDown && (form.IsDropHighlighted || !form.IsExpanded));
             form.Tick();
             if (form.IsExpanded)
             {

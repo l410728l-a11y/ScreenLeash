@@ -41,6 +41,9 @@ public sealed class LeashForm : Form
     /// <summary>外部东西拖进窗口：只把绳线点亮当提示，**不展开面板**（展开会挡住边缘图标操作）。</summary>
     private bool _dropHighlight;
 
+    /// <summary>是否有外部东西正拖在窗口上（用于决定要不要维持不透明）。</summary>
+    public bool IsDropHighlighted => _dropHighlight;
+
     /// <summary>正在做"绳子内部拖动排序"（未交给 OLE）。</summary>
     private bool _internalDrag;
 
