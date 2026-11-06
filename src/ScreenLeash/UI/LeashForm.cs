@@ -195,11 +195,25 @@ public sealed class LeashForm : Form
         //   近 → 本次拖动冻结展开响应（拖桌面图标/别的程序的文字路过边缘时绳子不该乱弹）；
         //   远 → 不冻结（用户从屏幕中间拖东西过来，靠近就该弹）。
         // 用 DragApproachZone（90dip）作为"近"的阈值——它本来就是吸附半径的语义。
+        // 左键刚按下的那一帧，记下"起点是不是就在屏幕侧边附近"：
+        //   近 → 本次拖动冻结展开响应（在边缘附近按下开始拖东西时，绳子不该冒出来挡路）；
+        //   远 → 不冻结（用户从屏幕中间拖东西过来，靠近就该弹）。
+        //
+        // 判定用**纯距离**而不是 IsCursorInTriggerZone：
+        // 后者内部还有 EdgeSpanRatio=80% 的沿边限制（屏幕上下各 10% 判不到），
+        // 而桌面图标常排在屏幕顶部/底部，用它会漏掉这些位置——这正是上一版没生效的原因。
         if (leftButtonDown && !_prevLeftDown)
         {
-            var nearPx = Metrics.Px(Metrics.DragApproachZone, Dpi);
-            _dragFrozen = insideWindow
-                          || EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, nearPx);
+            var nearPx = Metrics.Px(Metrics.ExpandedThickness, Dpi);
+            var distance = Edge switch
+            {
+                EdgeKind.Left => Math.Abs(cursor.X - area.Left),
+                EdgeKind.Right => Math.Abs(area.Right - cursor.X),
+                EdgeKind.Top => Math.Abs(cursor.Y - area.Top),
+                _ => Math.Abs(area.Bottom - cursor.Y),
+            };
+
+            _dragFrozen = insideWindow || distance <= nearPx;
         }
 
         _prevLeftDown = leftButtonDown;
