@@ -96,9 +96,10 @@ form.SetDropOpaque(leftDown && (form.IsDropHighlighted || !form.IsExpanded));
 | 项 | 状态 |
 |---|---|
 | 右键菜单弹出变慢 | **已排除本程序**：CPU 0.013%、无鼠标钩子（只装了 `WH_KEYBOARD_LL`）、用户 A/B 开/关程序一样慢 |
-| `449c0b0` 的"闪"修复 | **未验证**——定版时还没来得及测 |
 | 跨边互拖 | 代码还在（`MagnetSnapZone=90`），但左侧已关，**实际不可用** |
 | 诊断日志 `drag-diag.log` | 仍在 `%LOCALAPPDATA%\ScreenLeash\logs\`，会持续写入 |
+
+> **定版时已全部验证**：`449c0b0` 的"闪"修复经用户实测确认——拖文件靠近时窗口稳定展开不闪、松手能挂上（2026-11-06）。
 
 ## 五、诊断手段
 
