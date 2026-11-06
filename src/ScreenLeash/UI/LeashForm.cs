@@ -182,6 +182,13 @@ public sealed class LeashForm : Form
 
     public void EvaluateCursor(Point cursor, bool leftButtonDown)
     {
+        // 帧间状态必须在任何提前 return **之前**更新：
+        // 否则 _dropTarget 短暂为真的那几帧不会更新 _prevLeftDown，
+        // 回到正常后会被误判成"刚按下"，用**当前**光标位置重算冻结 ——
+        // 起点信息就此丢失，表现就是"在边缘按下也会弹"。
+        var justPressed = leftButtonDown && !_prevLeftDown;
+        _prevLeftDown = leftButtonDown;
+
         if (_dragging || _dropTarget)
         {
             SetState(LeashVisualState.Dragging);
@@ -191,18 +198,14 @@ public sealed class LeashForm : Form
         var area = _slot.Screen.WorkingArea;
         var insideWindow = Bounds.Contains(cursor);
 
-        // 左键刚按下的那一帧，记下"起点是不是离绳子很近"：
-        //   近 → 本次拖动冻结展开响应（拖桌面图标/别的程序的文字路过边缘时绳子不该乱弹）；
-        //   远 → 不冻结（用户从屏幕中间拖东西过来，靠近就该弹）。
-        // 用 DragApproachZone（90dip）作为"近"的阈值——它本来就是吸附半径的语义。
-        // 左键刚按下的那一帧，记下"起点是不是就在屏幕侧边附近"：
+        // 左键刚按下那一帧，记下"起点是不是就在屏幕侧边附近"：
         //   近 → 本次拖动冻结展开响应（在边缘附近按下开始拖东西时，绳子不该冒出来挡路）；
         //   远 → 不冻结（用户从屏幕中间拖东西过来，靠近就该弹）。
         //
         // 判定用**纯距离**而不是 IsCursorInTriggerZone：
         // 后者内部还有 EdgeSpanRatio=80% 的沿边限制（屏幕上下各 10% 判不到），
-        // 而桌面图标常排在屏幕顶部/底部，用它会漏掉这些位置——这正是上一版没生效的原因。
-        if (leftButtonDown && !_prevLeftDown)
+        // 而桌面图标常排在屏幕顶部/底部，用它会漏掉这些位置。
+        if (justPressed)
         {
             // 阈值取展开区的 2 倍：140dip 实测偏小，用户在边缘附近按下时仍会弹。
             var nearPx = Metrics.Px(Metrics.ExpandedThickness, Dpi) << 1;
@@ -216,8 +219,6 @@ public sealed class LeashForm : Form
 
             _dragFrozen = insideWindow || distance <= nearPx;
         }
-
-        _prevLeftDown = leftButtonDown;
 
         if (!leftButtonDown)
         {
