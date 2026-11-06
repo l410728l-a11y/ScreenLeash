@@ -41,8 +41,11 @@ public sealed class LeashForm : Form
     /// <summary>外部东西刚进入窗口、但还没到延迟阈值（此时不展开、不画框）。</summary>
     private bool _dropTargetPending;
 
-    /// <summary>外部东西进入窗口的时刻（Environment.TickCount64）。</summary>
-    private long _dropEnteredAt;
+    /// <summary>外部东西上次"移动"的时刻（Environment.TickCount64）：只统计静止时长。</summary>
+    private long _dragStillSince;
+
+    /// <summary>上一次 OnDragOver 的光标位置（客户区坐标），用于判断是否还在移动。</summary>
+    private Point _lastDragCursor;
 
     /// <summary>正在做"绳子内部拖动排序"（未交给 OLE）。</summary>
     private bool _internalDrag;
@@ -1042,7 +1045,8 @@ public sealed class LeashForm : Form
         // 你拖图标经过屏幕边缘时就会凭空冒出一整块深蓝挡住操作。
         // 真正展开放到 OnDragOver 里按停留时长决定。
         _dropTargetPending = true;
-        _dropEnteredAt = Environment.TickCount64;
+        _dragStillSince = Environment.TickCount64;
+        _lastDragCursor = PointToClient(new Point(drgevent.X, drgevent.Y));
     }
 
     protected override void OnDragOver(DragEventArgs drgevent)
@@ -1056,11 +1060,20 @@ public sealed class LeashForm : Form
             ? DragDropEffects.Copy
             : DragIn.EffectsFor(drgevent.Data);
 
-        // 外部东西停留够久才展开放框；快速经过不弹（用户要求的"拖图标经过边缘不该弹"）。
+        // 外部东西：只有**停住**够久才展开放框。
+        // 不能按"在窗口里待了多久"判定——上下拖桌面图标排列时，光标一直在边缘那一列里移动，
+        // 计时不会重置，300ms 一到就会误弹。所以按"静止时长"判：还在移动就持续重置计时。
         if (_dropTargetPending && !_dropTarget)
         {
-            var delay = Metrics.DragDropExpandDelayMs;
-            if (Environment.TickCount64 - _dropEnteredAt >= delay)
+            var p = PointToClient(new Point(drgevent.X, drgevent.Y));
+            var moved = Math.Abs(p.X - _lastDragCursor.X) + Math.Abs(p.Y - _lastDragCursor.Y);
+
+            if (moved > Metrics.DragStillThresholdPx)
+            {
+                _lastDragCursor = p;
+                _dragStillSince = Environment.TickCount64;
+            }
+            else if (Environment.TickCount64 - _dragStillSince >= Metrics.DragDropExpandDelayMs)
             {
                 _dropTargetPending = false;
                 _dropTarget = true;

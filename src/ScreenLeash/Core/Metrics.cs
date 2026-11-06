@@ -32,6 +32,10 @@ public static class Metrics
     /// 自己的卡片跨边拖动不走这个延迟（要立即展开才能落下去）。</summary>
     public const int DragDropExpandDelayMs = 300;
 
+    /// <summary>判定"光标还在动"的位移阈值(px)：OnDragOver 两次回调之间移动超过它就算仍在拖。
+    /// 上下拖桌面图标排列时，光标一直在窗口里移动——只有按"静止时长"判据才不会误弹。</summary>
+    public const int DragStillThresholdPx = 5;
+
     /// <summary>绳子沿边方向占工作区的比例（0..1）。0.8 = 上下（左右边则为上下）各留 10%，
     /// 不贴满整条边——用户要求「左右的上下不要打满」。</summary>
     public const float EdgeSpanRatio = 0.8f;
