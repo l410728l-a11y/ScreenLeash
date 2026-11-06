@@ -44,6 +44,9 @@ public sealed class LeashForm : Form
     /// <summary>正在做"绳子内部拖动排序"（未交给 OLE）。</summary>
     private bool _internalDrag;
 
+    /// <summary>磁铁吸附高亮：别的绳子拖东西过来时本窗口亮起。</summary>
+    private bool _magnetHighlight;
+
     /// <summary>诊断日志的 Move 打点计数（前几次足够定位）。</summary>
     private int _diagMoves;
 
@@ -94,6 +97,10 @@ public sealed class LeashForm : Form
 
     /// <summary>所在边。</summary>
     public EdgeKind Edge => _slot.Edge;
+
+    /// <summary>本窗口所在屏幕的工作区（跨边磁铁吸附判定要用）。
+    /// 单独暴露成属性，避免外部直接碰 _slot 字段（CS1690）。</summary>
+    internal Rectangle WorkingArea => _slot.Screen.WorkingArea;
 
     /// <summary>所在屏幕的 DPI（窗口矩形与绘制都按它换算）。</summary>
     public int Dpi => _slot.Screen.Dpi;
@@ -356,12 +363,14 @@ public sealed class LeashForm : Form
     {
         // 常态**什么都不画**：那些像素必须保持纯洋红，Windows 才会抠成全透明、
         // 让壁纸透出来。只有拖入经过时才铺一层不透明深蓝作为落点提示。
-        if (!_dropTarget && !_dragApproach)
+        if (!_dropTarget && !_dragApproach && !_magnetHighlight)
         {
             return;
         }
 
-        using var brush = new SolidBrush(_dropTarget ? Theme.SurfaceHover : Theme.DragApproach);
+        // 拖入经过 / 磁铁吸附都用深蓝（"能放这里"），只是靠近但还没吸附时用灰蓝。
+        using var brush = new SolidBrush(
+            _dropTarget || _magnetHighlight ? Theme.SurfaceHover : Theme.DragApproach);
         g.FillRectangle(brush, client);
     }
 
@@ -467,17 +476,17 @@ public sealed class LeashForm : Form
 
         if (IsOverAnyLeash(screenCursor, out var target))
         {
-            _dragTargetForm = target;
+            SetDragTarget(target);
             _insertIndex = ReferenceEquals(target, this) ? ComputeInsertIndexAt(client) : -1;
             Invalidate();
             return;
         }
 
-        // 离开所有绳子 → 交给系统拖出（拖到别的应用）。
+        // 离开所有吸附区 → 交给系统拖出（拖到别的应用）。
         var index = _pressedIndex;
         _internalDrag = false;
         _insertIndex = -1;
-        _dragTargetForm = null;
+        SetDragTarget(null);
         _pressedIndex = -1;
         Invalidate();
         StartDragOut(index);
@@ -564,20 +573,79 @@ public sealed class LeashForm : Form
         }
     }
 
-    /// <summary>光标是否落在任意一条绳子窗口上（跨边排序需要看到对侧窗口）。</summary>
+    /// <summary>
+    /// 磁铁判定：光标是否吸附到某条绳子。返回最近的一条。
+    ///
+    /// <para>为什么不用「落在窗口矩形内」：窗口收起时只有 6dip 宽，
+    /// 透明键又让缝隙的鼠标命中一起穿透，用矩形判定跨边拖动几乎吸不住。
+    /// 改成「到边的距离 ≤ DragApproachZone」后，光标只要靠近屏幕边缘就算吸附，
+    /// 这正是"磁铁"的语义。</para>
+    /// </summary>
     private static bool IsOverAnyLeash(Point screenPoint, out LeashForm? target)
     {
+        target = null;
+        var best = int.MaxValue;
+
         foreach (Form form in Application.OpenForms)
         {
-            if (form is LeashForm leash && leash.Visible && leash.Bounds.Contains(screenPoint))
+            if (form is not LeashForm leash || !leash.Visible)
             {
+                continue;
+            }
+
+            var area = leash.WorkingArea;
+            var zone = Metrics.Px(Metrics.DragApproachZone, leash.Dpi);
+            if (!EdgeGeometry.IsCursorInTriggerZone(leash.Edge, area, screenPoint, zone))
+            {
+                continue;
+            }
+
+            var distance = leash.Edge switch
+            {
+                EdgeKind.Left => screenPoint.X - area.Left,
+                EdgeKind.Right => area.Right - screenPoint.X,
+                EdgeKind.Top => screenPoint.Y - area.Top,
+                _ => area.Bottom - screenPoint.Y,
+            };
+
+            if (distance < best)
+            {
+                best = distance;
                 target = leash;
-                return true;
             }
         }
 
-        target = null;
-        return false;
+        return target is not null;
+    }
+
+    /// <summary>
+    /// 切换"磁铁目标"并同步高亮：源窗口拖动时，被吸附的那条绳子亮起来，
+    /// 明确告诉用户"松手就放这里"。
+    /// </summary>
+    private void SetDragTarget(LeashForm? target)
+    {
+        if (ReferenceEquals(_dragTargetForm, target))
+        {
+            return;
+        }
+
+        _dragTargetForm?.SetMagnetHighlight(false);
+        _dragTargetForm = target;
+        _dragTargetForm?.SetMagnetHighlight(true);
+
+        DragDiag("磁铁目标 → " + (target is null ? "无" : target.Edge.ToString()));
+    }
+
+    /// <summary>磁铁吸附高亮开关（由源窗口调用）。</summary>
+    public void SetMagnetHighlight(bool on)
+    {
+        if (_magnetHighlight == on)
+        {
+            return;
+        }
+
+        _magnetHighlight = on;
+        Invalidate();
     }
 
     private int ComputeInsertIndexAt(Point clientPoint)
