@@ -198,6 +198,16 @@ public sealed class LeashForm : Form
         var area = _slot.Screen.WorkingArea;
         var insideWindow = Bounds.Contains(cursor);
 
+        // 每帧都算：按下时用来判定是否冻结，冻结期间用来判定是否已经离开。
+        var nearPx = Metrics.Px(Metrics.DragFreezeWidth, Dpi);
+        var distance = Edge switch
+        {
+            EdgeKind.Left => Math.Abs(cursor.X - area.Left),
+            EdgeKind.Right => Math.Abs(area.Right - cursor.X),
+            // 绳子只用左右两条边；顶/底边默认不启用，不参与冻结判定。
+            _ => int.MaxValue,
+        };
+
         // 左键刚按下那一帧，记下"起点是不是就在屏幕侧边附近"：
         //   近 → 本次拖动冻结展开响应（在边缘附近按下开始拖东西时，绳子不该冒出来挡路）；
         //   远 → 不冻结（用户从屏幕中间拖东西过来，靠近就该弹）。
@@ -207,16 +217,6 @@ public sealed class LeashForm : Form
         // 而桌面图标常排在屏幕顶部/底部，用它会漏掉这些位置。
         if (justPressed)
         {
-            // 冻结宽度取 Metrics.DragFreezeWidth（当前 400dip）：140 太小、280 仍差一点。
-            var nearPx = Metrics.Px(Metrics.DragFreezeWidth, Dpi);
-            var distance = Edge switch
-            {
-                EdgeKind.Left => Math.Abs(cursor.X - area.Left),
-                EdgeKind.Right => Math.Abs(area.Right - cursor.X),
-                // 绳子只用左右两条边；顶/底边默认不启用，不参与冻结判定。
-                _ => int.MaxValue,
-            };
-
             _dragFrozen = insideWindow || distance <= nearPx;
 
             // 按下那一帧把判定依据打出来：区分"没算到"（distance 超阈值）、
@@ -233,11 +233,13 @@ public sealed class LeashForm : Form
         var zonePx = Metrics.Px(Metrics.EdgeTriggerZone, Dpi);
         var inZone = EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
 
-        // 冻结期间保持当前状态不动；光标一旦完全离开展开区就解冻，
-        // 之后再次靠近可以正常响应（用户要的"移出后再进来再响应"）。
+        // 冻结期间保持当前状态不动；只有**真正离开冻结区**才解冻。
+        // 不能再用 inZone(40dip) 当解冻判据：起点常落在 40~280dip 之间
+        // （日志实测 d=43/54/89），用它会在按下第一帧就把刚设好的冻结解掉，
+        // 下一帧光标进入 40dip 就弹出来——这正是"按着拖图标会弹"的原因。
         if (leftButtonDown && _dragFrozen)
         {
-            if (!insideWindow && !inZone)
+            if (distance > nearPx)
             {
                 _dragFrozen = false;
             }
