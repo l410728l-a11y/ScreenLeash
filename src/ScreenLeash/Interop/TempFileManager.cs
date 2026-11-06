@@ -45,6 +45,52 @@ public static class TempFileManager
     }
 
     /// <summary>
+    /// 把已有文件复制成临时文件，**保留调用方给的名字**。
+    /// <para>为什么需要：blob 在磁盘上是用 Guid 命名的，拖出去时直接给那个路径，
+    /// 目标端（桌面/微信）看到的就是一串乱码（用户反馈「拖出来名字就变了」）。
+    /// 这里用 <see cref="Item.DisplayName"/> 存的原名导出，必要时自动去重。</para>
+    /// </summary>
+    public static string CreateForCopy(string sourceFullPath, string preferredName)
+    {
+        var root = RootDirectory;
+        Directory.CreateDirectory(root);
+
+        var safe = SanitizeFileName(preferredName);
+        var target = Path.Combine(root, safe);
+
+        // 同名文件已存在（连续拖同一个卡片）时加序号，避免互相覆盖。
+        var stem = Path.GetFileNameWithoutExtension(safe);
+        var ext = Path.GetExtension(safe);
+        for (var i = 1; File.Exists(target); i++)
+        {
+            target = Path.Combine(root, stem + " (" + i + ")" + ext);
+        }
+
+        File.Copy(sourceFullPath, target, overwrite: false);
+        return target;
+    }
+
+    /// <summary>去掉文件名里对文件系统非法的字符（拖入名可能带 : * ? 等）。</summary>
+    private static string SanitizeFileName(string name)
+    {
+        var trimmed = (name ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            return FilePrefix + Guid.NewGuid().ToString("N");
+        }
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var builder = new System.Text.StringBuilder(trimmed.Length);
+        foreach (var ch in trimmed)
+        {
+            builder.Append(Array.IndexOf(invalid, ch) >= 0 ? '_' : ch);
+        }
+
+        var result = builder.ToString().Trim();
+        return result.Length == 0 ? FilePrefix + Guid.NewGuid().ToString("N") : result;
+    }
+
+    /// <summary>
     /// 延迟删除：<paramref name="delaySeconds"/> 秒后尝试删除，失败则留待下次启动清理。
     /// 不抛异常——拖出成功与否不该被清理逻辑影响。
     /// </summary>

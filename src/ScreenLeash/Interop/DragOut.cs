@@ -158,7 +158,23 @@ public static class DragOut
         if (item.HasBlob)
         {
             var full = paths.BlobPath(item.BlobName);
-            return full is not null && System.IO.File.Exists(full) ? full : null;
+            if (full is null || !System.IO.File.Exists(full))
+            {
+                return null;
+            }
+
+            // blob 在磁盘上是用 Guid 命名的，直接把这个路径交给目标端，
+            // 桌面/微信拿到的就是一串乱码名（用户反馈"拖出来名字就变了"）。
+            // 有原始名就复制一份原名文件再拖出去。
+            var display = item.DisplayName;
+            if (!string.IsNullOrWhiteSpace(display))
+            {
+                var named = TempFileManager.CreateForCopy(full, display);
+                tempFiles.Add(named);
+                return named;
+            }
+
+            return full;
         }
 
         if (item.Kind == Kind.Text && !string.IsNullOrEmpty(item.Text))
