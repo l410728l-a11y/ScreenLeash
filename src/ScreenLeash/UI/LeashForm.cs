@@ -359,6 +359,15 @@ public sealed class LeashForm : Form
             return;
         }
 
+        // 收起态不画卡片：窗口现在有 CollapsedThickness(40dip) 宽，
+        // EdgeLayout 算出来的卡片矩形仍会和它相交，于是被裁成一条"残留"贴在边上
+        // （用户反馈"面板收了一大半，有残留，宽度和拖进去那 40 一样"）。
+        // 以前 CollapsedThickness=6 时卡片矩形与窗口不相交，这个问题被掩盖着。
+        if (!IsExpanded)
+        {
+            return;
+        }
+
         var slots = EdgeLayout.Compose(Edge, client, Dpi, items.Count, _scrollPx);
         foreach (var slot in slots)
         {
