@@ -218,6 +218,11 @@ public sealed class LeashForm : Form
             };
 
             _dragFrozen = insideWindow || distance <= nearPx;
+
+            // 按下那一帧把判定依据打出来：区分"没算到"（distance 超阈值）、
+            // "算到了但被别处覆盖"（frozen=True 却仍弹）两种情况。
+            DragDiag("justPressed edge=" + Edge + " d=" + distance + " near=" + nearPx
+                + " inside=" + insideWindow + " frozen=" + _dragFrozen);
         }
 
         if (!leftButtonDown)
