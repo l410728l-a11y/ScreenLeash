@@ -236,12 +236,18 @@ public sealed class LeashForm : Form
             _dragFrozen = false;
         }
 
-        // 拖东西靠近时用更宽的判定（DragApproachZone）：用户反馈 40dip 要挨得很近才挂得上。
+        // 拖东西靠近时用更宽的判定（DragApproachZone）。
         // 纯悬停仍用 EdgeTriggerZone —— 否则鼠标随便靠近边缘就弹，反而更挡事。
         var draggingFromAway = leftButtonDown && !_dragFrozen;
         var zonePx = Metrics.Px(
             draggingFromAway ? Metrics.DragApproachZone : Metrics.EdgeTriggerZone, Dpi);
-        var inZone = EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
+
+        // 拖拽时用**纯距离**判定：IsCursorInTriggerZone 内部还有 EdgeSpanRatio=80% 的沿边限制，
+        // 屏幕上下各 10% 判不到——从那些位置拖东西过来会一直挂不上（用户反馈"实现不了"）。
+        // 悬停仍走原函数，保持"只在边中段响应"的手感，不会因为这次改动变得四处乱弹。
+        var inZone = draggingFromAway
+            ? distance <= zonePx
+            : EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
 
         // 冻结期间保持当前状态不动；只有**真正离开冻结区**才解冻。
         // 不能再用 inZone(40dip) 当解冻判据：起点常落在 40~280dip 之间
@@ -663,7 +669,7 @@ public sealed class LeashForm : Form
             }
 
             var area = leash.WorkingArea;
-            var zone = Metrics.Px(Metrics.DragApproachZone, leash.Dpi);
+            var zone = Metrics.Px(Metrics.MagnetSnapZone, leash.Dpi);
             if (!EdgeGeometry.IsCursorInTriggerZone(leash.Edge, area, screenPoint, zone))
             {
                 continue;

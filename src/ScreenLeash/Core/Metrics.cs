@@ -39,9 +39,13 @@ public static class Metrics
 
     /// <summary>拖拽靠近时的感应区（DIP）：比普通悬停的 40 更宽，
     /// 让用户拖东西时有足够空间提前看到「能放这里」的底框，而不是必须贴到边上。</summary>
-    /// <summary>拖东西靠近时判定"能挂"的范围。用户反馈 90dip 太窄、要挨得很近才行，放宽到 150dip。
-    /// 只用于拖拽（左键按住且起点不在边缘附近），纯悬停仍用 EdgeTriggerZone，不会跟着变敏感。</summary>
-    public const int DragApproachZone = 150;
+    /// <summary>拖东西靠近时判定"能挂"的范围（用户定：40dip）。
+    /// 与悬停用的 EdgeTriggerZone 分开命名，是为了以后调其中一个不会牵动另一个。</summary>
+    public const int DragApproachZone = 40;
+
+    /// <summary>跨边互拖时的磁铁吸附半径：拖着自己的卡片靠近另一条绳，到这个距离内就算吸附目标。
+    /// 比 DragApproachZone 宽，因为拖卡片时希望更容易"够到"对侧。</summary>
+    public const int MagnetSnapZone = 90;
 
     // ── 卡片 ─────────────────────────────────────────────────────
     /// <summary>卡片圆角半径（DIP）。</summary>
