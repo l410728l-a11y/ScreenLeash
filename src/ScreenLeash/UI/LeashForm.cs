@@ -534,11 +534,19 @@ public sealed class LeashForm : Form
             // 松手：内部拖拽就提交，然后清空按下状态。
             if (_internalDrag)
             {
-                CommitInternalDrag();
-                _internalDrag = false;
-                _insertIndex = -1;
-                _dragTargetForm = null;
-                Invalidate();
+                try
+                {
+                    CommitInternalDrag();
+                }
+                finally
+                {
+                    // 高亮与按下次态无论提交是否出错都要复位：残留的 _magnetHighlight
+                    // 会让 DrawSurface 每帧填满窗口，收起态就剩一条 40dip 宽的实色残留。
+                    _internalDrag = false;
+                    _insertIndex = -1;
+                    SetDragTarget(null);
+                    Invalidate();
+                }
             }
 
             _pressedIndex = -1;
@@ -636,7 +644,7 @@ public sealed class LeashForm : Form
         Capture = false;
         _internalDrag = false;
         _insertIndex = -1;
-        _dragTargetForm = null;
+        SetDragTarget(null);
         _pressedIndex = -1;
         Invalidate();
     }
@@ -654,7 +662,7 @@ public sealed class LeashForm : Form
         {
             _internalDrag = false;
             _insertIndex = -1;
-            _dragTargetForm = null;
+            SetDragTarget(null);
             _pressedIndex = -1;
             Invalidate();
         }
