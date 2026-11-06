@@ -27,6 +27,11 @@ public static class Metrics
     /// 实测：140 太小（左边仍弹）、280 左边明显好转、400 过头（把正常操作也冻住），当前取 280。</summary>
     public const int DragFreezeWidth = 280;
 
+    /// <summary>外部东西拖进窗口后，停留多久(ms)才弹出落点底框。
+    /// 拖桌面图标经过边缘时 OLE 会立刻发 OnDragEnter，不延迟就会凭空弹出一整块深蓝挡住操作。
+    /// 自己的卡片跨边拖动不走这个延迟（要立即展开才能落下去）。</summary>
+    public const int DragDropExpandDelayMs = 300;
+
     /// <summary>绳子沿边方向占工作区的比例（0..1）。0.8 = 上下（左右边则为上下）各留 10%，
     /// 不贴满整条边——用户要求「左右的上下不要打满」。</summary>
     public const float EdgeSpanRatio = 0.8f;

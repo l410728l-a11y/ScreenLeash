@@ -38,6 +38,12 @@ public sealed class LeashForm : Form
     private bool _dragging;
     private bool _dropTarget;
 
+    /// <summary>外部东西刚进入窗口、但还没到延迟阈值（此时不展开、不画框）。</summary>
+    private bool _dropTargetPending;
+
+    /// <summary>外部东西进入窗口的时刻（Environment.TickCount64）。</summary>
+    private long _dropEnteredAt;
+
     /// <summary>正在做"绳子内部拖动排序"（未交给 OLE）。</summary>
     private bool _internalDrag;
 
@@ -1018,11 +1024,25 @@ public sealed class LeashForm : Form
 
         // 自己拖出的卡片**也允许进入**：拖到对侧要能弹底框、要能落下去做"移动"。
         // 拦截只能放在 OnDragDrop 里（按移动处理），放在这里会导致拖不过去。
-        _dropTarget = true;
         drgevent.Effect = DragIn.EffectsFor(drgevent.Data);
-        SchedulePreview(-1);
-        SetState(LeashVisualState.Dragging);
-        Invalidate();
+
+        if (DragOut.IsDragging)
+        {
+            // 自己的卡片跨边拖动：必须立即展开，否则落不进去。
+            _dropTarget = true;
+            _dropTargetPending = false;
+            SchedulePreview(-1);
+            SetState(LeashVisualState.Dragging);
+            Invalidate();
+            return;
+        }
+
+        // 外部东西（桌面图标、别的程序的文字/文件）：先只记账。
+        // OLE 在光标一进入窗口就发 OnDragEnter，若立刻 _dropTarget=true + 展开，
+        // 你拖图标经过屏幕边缘时就会凭空冒出一整块深蓝挡住操作。
+        // 真正展开放到 OnDragOver 里按停留时长决定。
+        _dropTargetPending = true;
+        _dropEnteredAt = Environment.TickCount64;
     }
 
     protected override void OnDragOver(DragEventArgs drgevent)
@@ -1035,6 +1055,20 @@ public sealed class LeashForm : Form
         drgevent.Effect = DragOut.IsDragging
             ? DragDropEffects.Copy
             : DragIn.EffectsFor(drgevent.Data);
+
+        // 外部东西停留够久才展开放框；快速经过不弹（用户要求的"拖图标经过边缘不该弹"）。
+        if (_dropTargetPending && !_dropTarget)
+        {
+            var delay = Metrics.DragDropExpandDelayMs;
+            if (Environment.TickCount64 - _dropEnteredAt >= delay)
+            {
+                _dropTargetPending = false;
+                _dropTarget = true;
+                SchedulePreview(-1);
+                SetState(LeashVisualState.Dragging);
+                Invalidate();
+            }
+        }
     }
 
     protected override void OnDragLeave(EventArgs e)
@@ -1042,6 +1076,7 @@ public sealed class LeashForm : Form
         base.OnDragLeave(e);
 
         _dropTarget = false;
+        _dropTargetPending = false;
         SetState(LeashVisualState.Idle);
         Invalidate();
     }
