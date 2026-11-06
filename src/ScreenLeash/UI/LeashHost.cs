@@ -367,9 +367,8 @@ public sealed class LeashHost : IDisposable
             // 导致"按下明明命中了卡片，拖到一半却变成 -1"。
             form.PollDrag(cursor, leftDown);
 
-            // 左键按住期间临时取消透明键：透明像素连鼠标命中也穿透，
-            // 会导致纯文本拖入（微信草稿文字）触发不了 DragEnter、也不出底框。
-            form.SetDropOpaque(leftDown);
+            // 不再需要「左键按住就取消透明」：窗口已改为 layered（每像素 alpha），
+            // 透明像素照样能接收拖放，所以没有那块近黑底来挡边缘图标了。
             form.Tick();
             if (form.IsExpanded)
             {

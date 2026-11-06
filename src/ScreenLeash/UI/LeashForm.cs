@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -84,11 +85,10 @@ public sealed class LeashForm : Form
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        // 像素级透明：TransparencyKey 会把这个颜色的像素抠成全透明（连鼠标命中也穿透），
-        // 于是卡片之间、绳线上下的空隙都是真的透出壁纸，而不是一层"近黑底色"。
-        // 代价：完全透明的像素不接收拖放——拖东西要落在卡片上（缝隙只有 6px 宽，很难正好落进去）。
-        BackColor = Theme.TransparencyKey;
-        TransparencyKey = Theme.TransparencyKey;
+        // 透明用 layered window（每像素 alpha），不再用 TransparencyKey：
+        // 后者抠掉的像素**连鼠标命中和拖放一起穿透**，逼得"左键一按下就取消透明"来提前准备接收，
+        // 那块近黑就是用户看到的"灰色框"（在边缘点图标时挡住操作）。
+        // layered 下透明像素照样能接收拖放——探针 .rivet/scratch/layered-probe 已实测 DRAG_DROP。
         DoubleBuffered = true;
         AllowDrop = true;
         Text = "ScreenLeash";
@@ -146,46 +146,13 @@ public sealed class LeashForm : Form
             var parameters = base.CreateParams;
             parameters.ExStyle |= InteropConstants.WsExNoActivate;
             parameters.ExStyle |= InteropConstants.WsExToolWindow;
+            // layered：每像素 alpha 透明，且透明像素仍能接收鼠标/拖放（见 RenderLayered 注释）。
+            parameters.ExStyle |= LayeredInterop.WS_EX_LAYERED;
             return parameters;
         }
     }
 
     /// <summary>由宿主每 tick 调用：根据光标与按键状态决定该不该展开。</summary>
-    /// <summary>当前是否为了接收拖放而临时取消了透明键。</summary>
-    private bool _dropOpaque;
-
-    /// <summary>
-    /// 拖放期间临时取消像素级透明。
-    ///
-    /// <para>为什么需要：TransparencyKey 抠掉的像素**连鼠标命中也穿透**。
-    /// 微信"已发出的消息"带 FileDrop，光标通常停在卡片上，能触发 DragEnter；
-    /// 而"草稿里打的字"是纯文本（System.String|UnicodeText|Text），
-    /// 光标稍微落到卡片缝隙或空白处就完全穿透 —— 表现为**不显示底框、也挂不上**。
-    /// 左键一松开就恢复透明，不影响平时的观感。</para>
-    /// </summary>
-    public void SetDropOpaque(bool opaque)
-    {
-        if (_dropOpaque == opaque)
-        {
-            return;
-        }
-
-        _dropOpaque = opaque;
-
-        if (opaque)
-        {
-            TransparencyKey = Color.Empty;
-            BackColor = Theme.SurfaceDropOpaque;
-        }
-        else
-        {
-            BackColor = Theme.TransparencyKey;
-            TransparencyKey = Theme.TransparencyKey;
-        }
-
-        Invalidate();
-    }
-
     public void EvaluateCursor(Point cursor, bool leftButtonDown)
     {
         // 帧间状态必须在任何提前 return **之前**更新：
@@ -324,13 +291,82 @@ public sealed class LeashForm : Form
     {
         base.OnPaint(e);
 
-        var g = e.Graphics;
-        if (g is null)
+        // layered window 的绘制全部交给 RenderLayered（画到 32bpp 位图再 UpdateLayeredWindow）。
+        // e.Graphics 上画的东西会被 UpdateLayeredWindow 直接覆盖，所以这里不做绘制。
+        RenderLayered();
+    }
+
+    /// <summary>
+    /// 画到 32 位 ARGB 位图，再用 UpdateLayeredWindow 推给系统。
+    /// <para>为什么不再用 TransparencyKey：它抠掉的像素**连鼠标命中和拖放一起穿透**，
+    /// 所以只能靠"左键一按下就取消透明"来提前准备接收——那块近黑就是用户看到的"灰色框"，
+    /// 在边缘点图标时挡住操作。layered + 每像素 alpha 没有这个限制，
+    /// 探针已实测：半透明窗口照样能收到 DRAG_ENTER / DRAG_DROP。</para>
+    /// </summary>
+    private void RenderLayered()
+    {
+        var client = ClientRectangle;
+        if (client.Width <= 0 || client.Height <= 0)
         {
             return;
         }
 
-        var client = ClientRectangle;
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        using var bmp = new Bitmap(client.Width, client.Height, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.Clear(Color.Transparent);
+            DrawContent(g, client);
+        }
+
+        PushLayered(bmp);
+    }
+
+    /// <summary>把位图推给 layered window（ULW_ALPHA）。</summary>
+    private void PushLayered(Bitmap bmp)
+    {
+        var screenDc = LayeredInterop.GetDC(IntPtr.Zero);
+        if (screenDc == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var memDc = LayeredInterop.CreateCompatibleDC(screenDc);
+        var hBitmap = bmp.GetHbitmap(Color.FromArgb(0));
+        var oldBitmap = LayeredInterop.SelectObject(memDc, hBitmap);
+
+        try
+        {
+            var size = new LayeredInterop.SIZE { CX = bmp.Width, CY = bmp.Height };
+            var src = new LayeredInterop.POINT { X = 0, Y = 0 };
+            var dst = new LayeredInterop.POINT { X = Left, Y = Top };
+            var blend = new LayeredInterop.BLENDFUNCTION
+            {
+                BlendOp = LayeredInterop.AC_SRC_OVER,
+                BlendFlags = 0,
+                SourceConstantAlpha = LayeredInterop.OpaqueAlpha,
+                AlphaFormat = LayeredInterop.AC_SRC_ALPHA,
+            };
+
+            LayeredInterop.UpdateLayeredWindow(
+                Handle, screenDc, ref dst, ref size, memDc, ref src, 0, ref blend, LayeredInterop.ULW_ALPHA);
+        }
+        finally
+        {
+            LayeredInterop.SelectObject(memDc, oldBitmap);
+            LayeredInterop.DeleteObject(hBitmap);
+            LayeredInterop.DeleteDC(memDc);
+            LayeredInterop.ReleaseDC(IntPtr.Zero, screenDc);
+        }
+    }
+
+    /// <summary>原有绘制内容（背景、绳线、卡片、插入指示）。</summary>
+    private void DrawContent(Graphics g, Rectangle client)
+    {
         if (client.Width <= 0 || client.Height <= 0)
         {
             return;
