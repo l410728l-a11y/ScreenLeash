@@ -24,8 +24,8 @@ public static class Metrics
     public const int EdgeTriggerZone = 40;
 
     /// <summary>拖动**起点**距边多少 DIP 内冻结展开响应（防止在边缘附近选中/拖图标时绳子弹出来挡路）。
-    /// 实测 140dip 太小、280dip 仍差一点，当前取 400dip。</summary>
-    public const int DragFreezeWidth = 400;
+    /// 实测：140 太小（左边仍弹）、280 左边明显好转、400 过头（把正常操作也冻住），当前取 280。</summary>
+    public const int DragFreezeWidth = 280;
 
     /// <summary>绳子沿边方向占工作区的比例（0..1）。0.8 = 上下（左右边则为上下）各留 10%，
     /// 不贴满整条边——用户要求「左右的上下不要打满」。</summary>
