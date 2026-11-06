@@ -38,14 +38,17 @@ public sealed class LeashForm : Form
     private bool _dragging;
     private bool _dropTarget;
 
-    /// <summary>外部正拖东西靠近（还没进窗口）：据此画落点底框。纯悬停查看时为 false，不画框。</summary>
-    private bool _dragApproach;
-
     /// <summary>正在做"绳子内部拖动排序"（未交给 OLE）。</summary>
     private bool _internalDrag;
 
     /// <summary>磁铁吸附高亮：别的绳子拖东西过来时本窗口亮起。</summary>
     private bool _magnetHighlight;
+
+    /// <summary>上一帧左键是否按下（用来检测"刚按下"那一帧）。</summary>
+    private bool _prevLeftDown;
+
+    /// <summary>本次拖动是否冻结展开响应：起点离绳子很近时置位，直到光标离开展开区。</summary>
+    private bool _dragFrozen;
 
     /// <summary>诊断日志的 Move 打点计数（前几次足够定位）。</summary>
     private int _diagMoves;
@@ -188,31 +191,42 @@ public sealed class LeashForm : Form
         var area = _slot.Screen.WorkingArea;
         var insideWindow = Bounds.Contains(cursor);
 
-        // 只有两种情况允许"因为靠近而展开"：
-        //   1) 没按鼠标 —— 纯悬停查看（用户要的"靠近弹出"）
-        //   2) 按住左键，且按下点就在本窗口的卡片上 —— 正在拖自己的卡片
-        // 按住左键但按下点不在本窗口（拖桌面图标、拖别的程序的文字/文件经过边缘）时
-        // 一律不展开，否则绳子会冒出来挡住正常操作。这类外部拖入由 OnDragEnter 处理。
-        var draggingOwnCard = leftButtonDown && _pressedIndex >= 0;
-        var allowExpand = !leftButtonDown || draggingOwnCard;
-
-        var zonePx = Metrics.Px(Metrics.EdgeTriggerZone, Dpi);
-        var inZone = allowExpand && EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
-
-        // 「靠近就弹」已停用：它判据是"左键按下 + 距边 90dip 内"，
-        // 无法区分"拖要挂上去的东西"和"拖桌面图标/文件经过屏幕边缘"，
-        // 后者会让绳子莫名弹开挡住正常操作（用户反馈）。
-        // 外部拖入仍由 OnDragEnter 处理 —— 真正进入窗口时才弹，够用且不误伤。
-        var approaching = false;
-        if (approaching != _dragApproach)
+        // 左键刚按下的那一帧，记下"起点是不是离绳子很近"：
+        //   近 → 本次拖动冻结展开响应（拖桌面图标/别的程序的文字路过边缘时绳子不该乱弹）；
+        //   远 → 不冻结（用户从屏幕中间拖东西过来，靠近就该弹）。
+        // 用 DragApproachZone（90dip）作为"近"的阈值——它本来就是吸附半径的语义。
+        if (leftButtonDown && !_prevLeftDown)
         {
-            _dragApproach = approaching;
-            Invalidate();
+            var nearPx = Metrics.Px(Metrics.DragApproachZone, Dpi);
+            _dragFrozen = insideWindow
+                          || EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, nearPx);
         }
 
-        // insideWindow 也要受 allowExpand 约束：否则窗口一旦展开（140dip），
-        // 拖图标时只要光标还在展开区内就会一直保持展开，等于没修。
-        SetState(allowExpand && (inZone || insideWindow) ? LeashVisualState.Hover : LeashVisualState.Idle);
+        _prevLeftDown = leftButtonDown;
+
+        if (!leftButtonDown)
+        {
+            _dragFrozen = false;
+        }
+
+        var zonePx = Metrics.Px(Metrics.EdgeTriggerZone, Dpi);
+        var inZone = EdgeGeometry.IsCursorInTriggerZone(Edge, area, cursor, zonePx);
+
+        // 冻结期间保持当前状态不动；光标一旦完全离开展开区就解冻，
+        // 之后再次靠近可以正常响应（用户要的"移出后再进来再响应"）。
+        if (leftButtonDown && _dragFrozen)
+        {
+            if (!insideWindow && !inZone)
+            {
+                _dragFrozen = false;
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        SetState(inZone || insideWindow ? LeashVisualState.Hover : LeashVisualState.Idle);
     }
 
     /// <summary>由宿主每 tick 调用：推进厚度缓动与透明度。</summary>
@@ -373,14 +387,13 @@ public sealed class LeashForm : Form
     {
         // 常态**什么都不画**：那些像素必须保持纯洋红，Windows 才会抠成全透明、
         // 让壁纸透出来。只有拖入经过时才铺一层不透明深蓝作为落点提示。
-        if (!_dropTarget && !_dragApproach && !_magnetHighlight)
+        if (!_dropTarget && !_magnetHighlight)
         {
             return;
         }
 
-        // 拖入经过 / 磁铁吸附都用深蓝（"能放这里"），只是靠近但还没吸附时用灰蓝。
-        using var brush = new SolidBrush(
-            _dropTarget || _magnetHighlight ? Theme.SurfaceHover : Theme.DragApproach);
+        // 拖入经过 / 磁铁吸附都用深蓝（"能放这里"）。
+        using var brush = new SolidBrush(Theme.SurfaceHover);
         g.FillRectangle(brush, client);
     }
 
