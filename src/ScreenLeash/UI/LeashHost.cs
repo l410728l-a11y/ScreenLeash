@@ -409,7 +409,7 @@ public sealed class LeashHost : IDisposable
                 leftDown,
                 _pressMoved,
                 form.IsDropHighlighted,
-                form.IsExpanded,
+                form.IsDraggingCard,
                 form.Bounds.Contains(cursor)));
             form.Tick();
             if (form.IsExpanded)

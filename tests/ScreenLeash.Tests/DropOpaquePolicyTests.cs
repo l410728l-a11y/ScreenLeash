@@ -20,7 +20,7 @@ public class DropOpaquePolicyTests
             leftDown: true,
             movedWhilePressed: false,
             dropHighlighted: false,
-            expanded: false,
+            draggingCard: false,
             cursorInsideWindow: true);
 
         Assert.False(opaque);
@@ -34,7 +34,7 @@ public class DropOpaquePolicyTests
             leftDown: true,
             movedWhilePressed: true,
             dropHighlighted: false,
-            expanded: false,
+            draggingCard: false,
             cursorInsideWindow: true);
 
         Assert.True(opaque);
@@ -48,7 +48,7 @@ public class DropOpaquePolicyTests
             leftDown: true,
             movedWhilePressed: true,
             dropHighlighted: false,
-            expanded: false,
+            draggingCard: false,
             cursorInsideWindow: false);
 
         Assert.False(opaque);
@@ -62,7 +62,7 @@ public class DropOpaquePolicyTests
             leftDown: false,
             movedWhilePressed: true,
             dropHighlighted: true,
-            expanded: true,
+            draggingCard: false,
             cursorInsideWindow: true);
 
         Assert.False(opaque);
@@ -79,7 +79,7 @@ public class DropOpaquePolicyTests
             leftDown: true,
             movedWhilePressed: true,
             dropHighlighted: true,
-            expanded: true,
+            draggingCard: false,
             cursorInsideWindow: true);
 
         Assert.True(opaque);
@@ -93,23 +93,41 @@ public class DropOpaquePolicyTests
             leftDown: true,
             movedWhilePressed: false,
             dropHighlighted: false,
-            expanded: true,
+            draggingCard: false,
             cursorInsideWindow: true);
 
         Assert.False(opaque);
     }
 
-    /// <summary>展开态按住拖动（在卡片上拖排序）：卡片区域本身不透明，不需要整块变黑。</summary>
+    /// <summary>拖自己的卡片排序：面板本身有卡片像素，不需要整块变黑。</summary>
     [Fact]
-    public void 展开态按住拖动_不变不透明()
+    public void 拖自己的卡片排序时_不变不透明()
     {
         bool opaque = DropOpaquePolicy.ShouldBeOpaque(
             leftDown: true,
             movedWhilePressed: true,
             dropHighlighted: false,
-            expanded: true,
+            draggingCard: true,
             cursorInsideWindow: true);
 
         Assert.False(opaque);
+    }
+
+    /// <summary>
+    /// 外部东西拖到绳子上时，<c>EvaluateCursor</c> 会在同一 tick 先把窗口设成展开
+    /// （光标进入 40dip 感应区就 SetState(Hover)）。如果判据把「展开」当作不变不透明的理由，
+    /// 那拖到位的那一刻永远不变不透明 → OLE 命中不到窗口 → 黑框不出、挂不上。
+    /// </summary>
+    [Fact]
+    public void 拖东西靠近导致展开时_仍必须变不透明()
+    {
+        bool opaque = DropOpaquePolicy.ShouldBeOpaque(
+            leftDown: true,
+            movedWhilePressed: true,
+            dropHighlighted: false,
+            draggingCard: false,
+            cursorInsideWindow: true);
+
+        Assert.True(opaque);
     }
 }

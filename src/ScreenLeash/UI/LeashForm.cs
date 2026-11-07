@@ -44,6 +44,12 @@ public sealed class LeashForm : Form
     /// <summary>是否有外部东西正拖在窗口上（用于决定要不要维持不透明）。</summary>
     public bool IsDropHighlighted => _dropHighlight;
 
+    /// <summary>
+    /// 本窗口是否正在拖自己的卡片（内部排序或拖出）。
+    /// 与「外部东西拖进来」互斥：前者面板上有卡片像素、不该整块变黑；后者必须不透明才能收 DragEnter。
+    /// </summary>
+    public bool IsDraggingCard => _internalDrag || _dragging;
+
     /// <summary>正在做"绳子内部拖动排序"（未交给 OLE）。</summary>
     private bool _internalDrag;
 

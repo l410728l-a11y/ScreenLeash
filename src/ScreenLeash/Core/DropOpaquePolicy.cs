@@ -31,13 +31,13 @@ public static class DropOpaquePolicy
     /// <param name="leftDown">左键当前是否按下。</param>
     /// <param name="movedWhilePressed">本次按下后光标是否移动超过系统拖拽阈值。</param>
     /// <param name="dropHighlighted">外部东西正拖在本窗口上（已收到 DragEnter）。</param>
-    /// <param name="expanded">窗口当前是否展开。</param>
+    /// <param name="draggingCard">本窗口正在拖自己的卡片（内部排序或拖出）。</param>
     /// <param name="cursorInsideWindow">光标是否落在本窗口矩形内（屏幕坐标）。</param>
     public static bool ShouldBeOpaque(
         bool leftDown,
         bool movedWhilePressed,
         bool dropHighlighted,
-        bool expanded,
+        bool draggingCard,
         bool cursorInsideWindow)
     {
         if (!leftDown)
@@ -51,13 +51,17 @@ public static class DropOpaquePolicy
             return true;
         }
 
-        // 展开态本来就有大片不透明像素，再取消透明只会让整块面板变近黑。
-        if (expanded)
+        // 拖自己的卡片（排序 / 拖出）：面板本身有卡片像素，再整块变黑只会挡住操作。
+        if (draggingCard)
         {
             return false;
         }
 
-        // 收起态：必须是「按着并移动」且光标已经落在窗口里，才算可能在拖东西进来。
+        // 「按着并移动了、光标也已经落在窗口里」= 可能是外部东西拖进来。
+        //
+        // 不能用「是否展开」当拒绝条件：拖东西靠近时 EvaluateCursor 会在**同一 tick**
+        // 先把窗口设成展开（光标进入 40dip 感应区就 SetState(Hover)），
+        // 若展开就拒绝不透明，拖到位那一刻永远命中不到 OLE —— 黑框不出、也挂不上（用户实测）。
         return movedWhilePressed && cursorInsideWindow;
     }
 }
