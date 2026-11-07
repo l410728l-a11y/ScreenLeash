@@ -36,6 +36,15 @@ public sealed class LeashHost : IDisposable
     private bool _pasteHookInstallFailed;
     private bool _disposed;
 
+    /// <summary>上一帧左键是否按下（用来取"按下那一刻"的光标位置）。</summary>
+    private bool _prevLeftDown;
+
+    /// <summary>按下瞬间的光标位置（屏幕坐标）。</summary>
+    private Point _pressOrigin;
+
+    /// <summary>本次按下后光标是否已移动超过系统拖拽阈值——拖放的特征，单纯点击为 false。</summary>
+    private bool _pressMoved;
+
     [DllImport("user32.dll", SetLastError = false)]
     private static extern short GetAsyncKeyState(int virtualKey);
 
@@ -357,6 +366,25 @@ public sealed class LeashHost : IDisposable
         var cursor = Cursor.Position;
         var leftDown = (GetAsyncKeyState(InteropConstants.VkLeftButton) & InteropConstants.KeyStatePressed) != 0;
 
+        // 「按着并真的移动了」才是拖放特征；单纯点击/双击（哪怕点在屏幕右边）不该让窗口变黑。
+        // 阈值用系统拖拽尺寸，与 WinForms 判定 DragStart 的口径一致。
+        if (!leftDown)
+        {
+            _pressMoved = false;
+        }
+        else if (!_prevLeftDown)
+        {
+            _pressOrigin = cursor;
+        }
+        else if (!_pressMoved)
+        {
+            var dragSize = SystemInformation.DragSize;
+            _pressMoved = Math.Abs(cursor.X - _pressOrigin.X) > dragSize.Width
+                          || Math.Abs(cursor.Y - _pressOrigin.Y) > dragSize.Height;
+        }
+
+        _prevLeftDown = leftDown;
+
         foreach (var form in _forms)
         {
             form.EvaluateCursor(cursor, leftDown);
@@ -367,16 +395,22 @@ public sealed class LeashHost : IDisposable
             // 导致"按下明明命中了卡片，拖到一半却变成 -1"。
             form.PollDrag(cursor, leftDown);
 
-            // 只在**收起的细线**上才需要临时取消透明：那时窗口只有 6dip 宽，
-            // 透明像素会让拖放完全穿透、根本收不到 OnDragEnter。
-            // 已经展开（140dip、有卡片）时窗口本身就有大片不透明像素，拖放落上去能正常触发，
-            // 再取消透明只会让整块面板变成近黑——就是"悬浮着看卡片时一按就弹黑框"。
+            // 收起态需要临时取消透明：窗口 40dip 宽，除了一条 2.5dip 的绳线全是透明像素，
+            // 不取消的话拖东西落上去根本收不到 OnDragEnter。
+            //
+            // 判据不能只看「左键按下」——那样在桌面或任何应用里点一下（不移动也一样）
+            // 都会让右边这条 40dip 窗口整块变成近黑，表现为「点一次闪一次」。见 DropOpaquePolicy。
             //
             // 但**外部东西正在拖入时**必须一直保持不透明：
-            // 展开成 140dip 后如果恢复透明，那 140dip 里除了 2.5dip 的线全是透明像素，
+            // 展开成 140dip 后如果恢复透明，那 140dip 里除了细线全是透明像素，
             // OLE 会认为光标离开了窗口 → OnDragLeave → 收起 → 又不透明 → 再 DragEnter，
             // 表现为"可拖入区间闪一下就缩回去"（用户反馈）。
-            form.SetDropOpaque(leftDown && (form.IsDropHighlighted || !form.IsExpanded));
+            form.SetDropOpaque(DropOpaquePolicy.ShouldBeOpaque(
+                leftDown,
+                _pressMoved,
+                form.IsDropHighlighted,
+                form.IsExpanded,
+                form.Bounds.Contains(cursor)));
             form.Tick();
             if (form.IsExpanded)
             {
