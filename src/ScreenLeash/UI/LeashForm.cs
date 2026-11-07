@@ -195,7 +195,7 @@ public sealed class LeashForm : Form
         Invalidate();
     }
 
-    public void EvaluateCursor(Point cursor, bool leftButtonDown)
+    public void EvaluateCursor(Point cursor, bool leftButtonDown, bool mayBeDragging = false)
     {
         // 帧间状态必须在任何提前 return **之前**更新：
         // 否则 _dropTarget 短暂为真的那几帧不会更新 _prevLeftDown，
@@ -207,6 +207,14 @@ public sealed class LeashForm : Form
         if (_dragging || _dropTarget)
         {
             SetState(LeashVisualState.Dragging);
+            return;
+        }
+
+        // 外部东西已经拖进窗口（OnDragEnter 已触发）：保持当前尺寸不动。
+        // 这时任何 SetBounds 动画都可能让 OLE 重新判定「光标离开」→ DragLeave → 收起 → 再进入，
+        // 就是 449c0b0 修掉的「闪一下就缩回去」。
+        if (_dropHighlight)
+        {
             return;
         }
 
@@ -272,6 +280,21 @@ public sealed class LeashForm : Form
             {
                 return;
             }
+        }
+
+        // 按着左键并移动过 = 可能正在全屏拖东西（桌面图标、文件、别的程序的卡片）。
+        // 这时不能因为光标靠近就展开：140dip 的面板会整块盖住正要拖的东西
+        // （用户反馈："一拖，上面那个悬浮卡连带着都弹出来了，整体框弹出一百多"）。
+        // 例外：按在本窗口卡片上（_pressedIndex >= 0）的内部拖动排序——窗口本来就在展开态。
+        if (leftButtonDown && mayBeDragging && _pressedIndex < 0)
+        {
+            // 已经展开的面板不强制收起（用户可能正在它上面操作），只是别再新展开。
+            if (!IsExpanded)
+            {
+                SetState(LeashVisualState.Idle);
+            }
+
+            return;
         }
 
         SetState(inZone || insideWindow ? LeashVisualState.Hover : LeashVisualState.Idle);

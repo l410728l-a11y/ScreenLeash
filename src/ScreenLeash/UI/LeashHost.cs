@@ -387,7 +387,7 @@ public sealed class LeashHost : IDisposable
 
         foreach (var form in _forms)
         {
-            form.EvaluateCursor(cursor, leftDown);
+            form.EvaluateCursor(cursor, leftDown, _pressMoved);
 
             // 拖拽判定走轮询，不依赖鼠标事件，也不依赖 Capture：
             // 实测 Capture = true 在这个窗口上设不上（WS_EX_NOACTIVATE + TransparencyKey），
