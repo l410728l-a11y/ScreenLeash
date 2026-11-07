@@ -600,7 +600,10 @@ public sealed class LeashForm : Form
 
         if (IsOverAnyLeash(screenCursor, out var target))
         {
-            SetDragTarget(target);
+            // 磁铁高亮是「跨边落点提示」：命中的是自己（同边排序）时不点亮。
+            // 否则单击卡片时手抖超过系统拖拽阈值也会走到这里，
+            // DrawSurface 会把整块面板填成深蓝——就是用户反馈的"点一下闪一下蓝线"。
+            SetDragTarget(MagnetPolicy.ShouldHighlight(target, this) ? target : null);
             _insertIndex = ReferenceEquals(target, this) ? ComputeInsertIndexAt(client) : -1;
             Invalidate();
             return;
