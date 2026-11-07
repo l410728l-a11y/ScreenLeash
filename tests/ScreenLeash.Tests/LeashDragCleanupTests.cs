@@ -115,6 +115,54 @@ public class LeashDragCleanupTests : IDisposable
         });
     }
 
+    /// <summary>
+    /// 外部东西拖进窗口并松手后，<c>_dropHighlight</c> 必须复位。
+    ///
+    /// <para><b>反例（用户实测反馈）</b>：拖过一次文件之后整条绳子「怎么触碰都没有用」——
+    /// 悬停不展开、卡片也出不来。根因是 OLE 在窗口内松手时只发 <c>OnDragDrop</c>、
+    /// <b>不发 <c>OnDragLeave</c></b>，而 <c>OnDragDrop</c> 没有清 <c>_dropHighlight</c>；
+    /// 于是 <c>EvaluateCursor</c> 里「外部拖入中就不改状态」的早退每帧生效，
+    /// 状态永远停在 Idle。</para>
+    /// </summary>
+    [Fact]
+    public void 外部拖放落下后_高亮必须复位()
+    {
+        RunOnSta(() =>
+        {
+            var slot = new EdgeSlot(
+                new ScreenInfo(
+                    "test",
+                    new Rectangle(0, 0, 1920, 1080),
+                    new Rectangle(0, 0, 1920, 1040),
+                    96,
+                    Primary: true),
+                EdgeKind.Right);
+
+            using var store = new ItemStore(_paths);
+            using var form = new LeashForm(slot, store, null, _paths, new AppSettings());
+
+            var data = new DataObject();
+
+            InvokePrivate(
+                form,
+                "OnDragEnter",
+                new DragEventArgs(data, 0, 1900, 500, DragDropEffects.Copy, DragDropEffects.Copy));
+
+            Assert.True(form.IsDropHighlighted, "前置条件：外部拖入应点亮高亮。");
+
+            InvokePrivate(
+                form,
+                "OnDragDrop",
+                new DragEventArgs(data, 0, 1900, 500, DragDropEffects.Copy, DragDropEffects.Copy));
+
+            Assert.False(form.IsDropHighlighted, "松手后高亮必须复位，否则悬停判定会一直早退。");
+
+            form.EvaluateCursor(new Point(1900, 500), leftButtonDown: false, mayBeDragging: false);
+
+            Assert.True(form.IsExpanded, "复位后普通悬停必须能重新展开。");
+        });
+    }
+
     private static void InvokePrivate(LeashForm form, string method, params object?[] args)
     {
         var info = typeof(LeashForm).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)

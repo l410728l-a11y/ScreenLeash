@@ -1177,6 +1177,13 @@ public sealed class LeashForm : Form
     {
         base.OnDragDrop(drgevent);
 
+        // 拖放已经落下：窗口不再处于「外部东西正拖在上面」的状态。
+        // 必须在这里复位 —— OLE 在窗口内松手时只发 DragDrop、**不发 DragLeave**，
+        // 漏掉这一处 _dropHighlight 会永远为 true：EvaluateCursor 里
+        // 「外部拖入中不改状态」的早退每帧生效，表现为
+        // 「拖进去过一次之后整条绳子怎么碰都不展开」（用户反馈）。
+        _dropHighlight = false;
+
         DragDiag("DragDrop isDragging=" + DragOut.IsDragging
             + " hasFileDrop=" + (drgevent.Data?.GetDataPresent(DataFormats.FileDrop) == true));
 
