@@ -126,3 +126,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 test
 ## 未做的事
 
 - `image` 类型的 `add`（位图字节）：挂件侧没有对应入口，插件也不读剪贴板。要挂截图用 `leash_paste` 或用户自己 Ctrl+V。
+- **不做 `items.json` 缓存**（已知限制，有意为之）：`info` / `list` / `read` 每次调用都全量读取并解析 `items.json`。实测 p50：10 张卡 0.10ms、1,000 张卡（578 KB）3.99ms、10,000 张卡（5.8 MB）32ms。加缓存要引入失效判定，而 `items.json` 的唯一写者是挂件（它能被外部改写的假设不成立但无法从进程外可靠观测），缓存与挂件的下次保存之间会有窗口期——风险大于 4ms 的收益。若未来卡片数量级变化，重新评估。
+- **不做工具级重试**：写操作失败直接返回 `write-failed`，由调用方决定是否重试，避免插件内部重复投递造成重复落卡。
