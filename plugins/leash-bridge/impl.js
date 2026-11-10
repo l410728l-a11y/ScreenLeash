@@ -252,6 +252,10 @@ export function listLeash(root = defaultLeashRoot(), args = {}) {
     returned: shown.length,
     truncated: total > shown.length,
     recoveredFromBackup: doc.recoveredFromBackup,
+    // 账本状态外显：ok:true + total:0 本身区分不了「真的没卡」和「账本读不到」，
+    // 这里补一个与 leash_info.document.state 同口径的字段，不改变任何既有字段的语义。
+    documentState: doc.ok ? 'ok' : 'unavailable',
+    documentReason: doc.ok ? null : (doc.reason ?? null),
     items: shown.map(describe),
   }
 }
