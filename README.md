@@ -3,14 +3,17 @@
 挂在屏幕四边的小绳子：把截图、图片或一句话拖进去 / 粘贴进去，需要时再拖出来用。
 鼠标不拖东西时收起成细线，有东西拖近或悬停时弹出。
 
-> 当前状态：**项目骨架**（bootstrap）。可构建、可运行托盘宿主、单实例与崩溃日志已就位；绳子窗口与数据层由后续条目接入。
+> 当前状态：**功能完整可运行**。`src` 下 27 个 `.cs` / 8,258 行，`tests` 193 项全部通过；
+> 四边绳子、卡片数据层、收件箱通道（外部程序投递）、全局 Ctrl+V 粘贴、托盘菜单均已接入。
+>
+> **已知未做**：exe 未做代码签名（首次运行会被 SmartScreen 拦截，走「更多信息 → 仍要运行」）；无自动更新；多显示器下的绳条位置记忆未验证。
 
 ## 环境
 
 - Windows 10 / 11（本机为 Windows 11 26200）
-- .NET 8 SDK。本机系统 `dotnet` 只有主机没有 SDK，私有 SDK 位于：
-  `C:\Users\Administrator\dotnet-sdk-8`（含 WindowsDesktop.App 8.0.33）
-- `build.ps1` 会自动把 `DOTNET_ROOT` 指向该目录，无需手动设置。
+- .NET SDK 8.0 或更高（目标框架 `net8.0-windows`）。已在 .NET SDK **9.0.316** 上验证：还原、Release 构建、193 项测试全部通过；不需要预装 WindowsDesktop Runtime 8.0.33。
+- 若本机装了多个 SDK，用 `dotnet --list-sdks` 确认版本；`build.ps1` 不依赖任何固定安装路径。
+- 以自包含方式发布（`publish -SelfContained`）时，目标机器无需安装 .NET 运行时。
 
 ## 构建与验证
 
@@ -43,10 +46,21 @@ dotnet src\ScreenLeash\bin\Release\net8.0-windows\ScreenLeash.exe
 - 崩溃日志：`%LOCALAPPDATA%\ScreenLeash\logs\crash-<yyyyMMdd>.log`，
   未处理异常（进程级与 UI 线程级）都会落盘，并用托盘气泡提示。
 
+### 托盘菜单与全局键盘钩子
+
+托盘右键菜单含「开机自启」开关（`src\ScreenLeash\Program.cs:174` → `ToggleStartup()`）：
+勾选后写 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，取消时删除该项；菜单勾选态
+始终回读注册表真实状态（`AppSettings.IsStartupRegistered()`），不会显示假状态。
+
+程序会安装一个**全局低级键盘钩子**（`WH_KEYBOARD_LL`，`src\ScreenLeash\Interop\PasteHook.cs:234`），
+用于识别 Ctrl+V：仅当前台没有可粘贴目标时，把这次粘贴转成「挂到绳子上」。钩子只判断按键是否
+构成 Ctrl+V，不记录、不缓存、不发送按键内容；钩子装不上时降级为托盘菜单手动粘贴，并在启动
+气泡里点名降级路径。
+
 ## 裸像素门禁（verify-metrics）
 
 `tests\ScreenLeash.Tests` 里的 `NoRawPixelScanner` 扫描 `src\ScreenLeash\UI` 与
-`src\ScreenLeash\Interop` 下的 C# 源码（这两个目录在后续条目才出现，当前为空集）：
+`src\ScreenLeash\Interop` 下的 C# 源码：
 
 - 任何非 `0` / `1` / `0.0` / `1.0` 的数字字面量 = 违规；
 - `Color.xxx` 命名颜色 = 违规（颜色必须走 `Theme`，`UI\Theme.cs` 自身除外）；
@@ -85,6 +99,5 @@ Windows Defender：设置 → 隐私和安全性 → Windows 安全中心 → �
 隔离复跑（产品项目被其它条目未完成文件阻塞时）：
 
 ```powershell
-$env:DOTNET_ROOT='C:\Users\Administrator\dotnet-sdk-8'
 dotnet test .rivet\scratch\metrics-verify\Verify.csproj
 ```

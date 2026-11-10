@@ -13,8 +13,8 @@
                        Add -SingleFile to get the old single-file bundle in publish\self-contained instead.
     - verify-metrics : Raw-pixel gate - dotnet test --filter FullyQualifiedName~NoRawPixel, exit 1 on failure.
 
-    Every target points DOTNET_ROOT at the private SDK on this machine
-    (the system dotnet host has no SDK installed).
+    Every target uses whatever .NET SDK is on PATH (8.0 or newer works).
+    No fixed install path is required.
 
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 verify-metrics
@@ -41,15 +41,26 @@ if (-not $root) {
     $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
 
-$dotnetRoot = 'C:\Users\Administrator\dotnet-sdk-8'
-$dotnetExe = Join-Path $dotnetRoot 'dotnet.exe'
-if (-not (Test-Path $dotnetExe)) {
-    Write-Error "Cannot find .NET 8 SDK at $dotnetExe . Install SDK 8 there, or edit the dotnetRoot constant in build.ps1."
+# Resolve dotnet: pick the first candidate that actually has an SDK installed.
+# A host-only dotnet.exe (no SDK) returns nothing from --list-sdks, so it is skipped.
+$candidates = @()
+$privateSdk = Join-Path $env:USERPROFILE 'dotnet-sdk-8\dotnet.exe'
+if (Test-Path $privateSdk) { $candidates += $privateSdk }
+$onPath = Get-Command dotnet -ErrorAction SilentlyContinue
+if ($onPath) { $candidates += $onPath.Source }
+
+$dotnetExe = $null
+foreach ($candidate in $candidates) {
+    $sdks = & $candidate --list-sdks 2>$null
+    if ($LASTEXITCODE -eq 0 -and $sdks) { $dotnetExe = $candidate; break }
+}
+
+if (-not $dotnetExe) {
+    Write-Error 'dotnet SDK not found: install .NET SDK 8.0 or newer (dotnet --list-sdks must list a version).'
     exit 1
 }
 
-$env:DOTNET_ROOT = $dotnetRoot
-$env:PATH = "$dotnetRoot;$env:PATH"
+Write-Host "dotnet: $dotnetExe"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
 
@@ -90,21 +101,24 @@ switch ($Target) {
                 Invoke-Dotnet -Arguments @(
                     'publish', $project, '-c', 'Release', '-r', 'win-x64',
                     '--self-contained', 'true', '-p:PublishSingleFile=true',
-                    '-p:IncludeNativeLibrariesForSelfExtract=true', '-o', $out)
+                    '-p:IncludeNativeLibrariesForSelfExtract=true',
+                    '-p:DebugType=none', '-p:DebugSymbols=false', '-o', $out)
             }
             else {
                 # Directory form: no self-extract step, faster cold start, fewer AV false positives.
                 $out = Join-Path $publishRoot 'standalone'
                 Invoke-Dotnet -Arguments @(
                     'publish', $project, '-c', 'Release', '-r', 'win-x64',
-                    '--self-contained', 'true', '-p:PublishSingleFile=false', '-o', $out)
+                    '--self-contained', 'true', '-p:PublishSingleFile=false',
+                    '-p:DebugType=none', '-p:DebugSymbols=false', '-o', $out)
             }
         }
         else {
             $out = Join-Path $publishRoot 'framework-dependent'
             Invoke-Dotnet -Arguments @(
                 'publish', $project, '-c', 'Release', '-r', 'win-x64',
-                '--self-contained', 'false', '-p:PublishSingleFile=false', '-o', $out)
+                '--self-contained', 'false', '-p:PublishSingleFile=false',
+                '-p:DebugType=none', '-p:DebugSymbols=false', '-o', $out)
         }
 
         Write-Host "publish: output -> $out"
