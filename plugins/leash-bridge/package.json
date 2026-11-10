@@ -1,6 +1,6 @@
 {
   "name": "leash-bridge",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "description": "天枢插件：连接 ScreenLeash（屏幕边缘挂件），读写屏幕四边的卡片"
 }

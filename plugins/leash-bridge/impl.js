@@ -30,6 +30,15 @@ export const MAX_PREVIEW = 120
 /** items.json 的结构版本；读到更高版本视为不兼容（可能被新版写过）。 */
 export const SCHEMA_VERSION = 1
 
+/** leash_list 的返回条数上限：防止传一个巨大 limit 把整库卡片塞进上下文。 */
+export const MAX_LIST_LIMIT = 200
+
+/** leash_list 未给 limit 时的默认条数。 */
+export const DEFAULT_LIST_LIMIT = 50
+
+/** 收件箱积压上限：挂件长期不运行时，投递到这里的文件只进不出。 */
+export const MAX_INBOX_PENDING = 200
+
 /**
  * 默认数据根。Windows 上取 %LOCALAPPDATA%\ScreenLeash；
  * 非 Windows 或环境变量缺失时退回 <home>/AppData/Local/ScreenLeash（便于在测试里注入）。
@@ -219,8 +228,27 @@ export function listLeash(root = defaultLeashRoot(), args = {}) {
   const { edge, kind, limit } = args ?? {}
   const doc = readDocument(root)
 
-  if (!doc.ok && doc.reason !== 'version-out-of-range' && !doc.exists) {
-    return { ok: false, reason: 'not-installed', root, items: [], total: 0 }
+  // 数据目录是否存在由 withDataRootGuard 前置判定（不存在时工具根本不会走到这里）。
+  // 走到这里仍然没有 items.json，说明账本尚未创建 —— ItemStore 只在首次修改操作时落盘。
+  // 旧实现报 not-installed，会把「账本还没建」误诊成「本体没装」。
+  if (!doc.ok && !doc.exists) {
+    // 两种情况必须分开：
+    //   root 不存在  → 本体没装（工具层 withDataRootGuard 已挡一次，这里对直接调用者兜底）
+    //   root 在但 items.json 未落盘 → 空账本（ItemStore 只在首个修改操作时写盘），是正常状态
+    if (!fs.existsSync(root)) {
+      return { ok: false, reason: 'not-installed', root, items: [], total: 0 }
+    }
+    return {
+      ok: true,
+      root,
+      total: 0,
+      returned: 0,
+      truncated: false,
+      recoveredFromBackup: false,
+      documentState: 'absent',
+      documentReason: 'items.json 尚未创建（挂件首个写操作才会落盘）',
+      items: [],
+    }
   }
 
   let items = doc.items.slice()
@@ -242,7 +270,11 @@ export function listLeash(root = defaultLeashRoot(), args = {}) {
   )
 
   const total = items.length
-  const cap = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Number(limit) : 50
+  const requested = Number(limit)
+  const cap =
+    Number.isFinite(requested) && requested > 0
+      ? Math.min(Math.floor(requested), MAX_LIST_LIMIT)
+      : DEFAULT_LIST_LIMIT
   const shown = items.slice(0, cap)
 
   return {
@@ -402,6 +434,23 @@ export function submitToInbox(root, payload) {
   }
 
   const inbox = path.join(root, 'inbox')
+
+  // 挂件长期不运行时收件箱只进不出（处理侧是挂件自己的 1.5s 轮询），给一个积压上限。
+  try {
+    const pending = fs.readdirSync(inbox).filter((n) => n.endsWith('.json')).length
+    if (pending >= MAX_INBOX_PENDING) {
+      return {
+        ok: false,
+        reason: 'inbox-full',
+        pending,
+        limit: MAX_INBOX_PENDING,
+        hint: '收件箱积压已达上限：启动 ScreenLeash 让它处理完，或清理 inbox 下的 .json',
+      }
+    }
+  } catch {
+    /* 目录不存在 = 没有积压，下面的 mkdirSync 会建 */
+  }
+
   const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15)
   const name = `tianshu-${stamp}-${randomUUID().slice(0, 8)}`
   const tmp = path.join(inbox, `${name}.json.tmp`)
@@ -582,6 +631,8 @@ export function createTools(dataRoot) {
       requiresApproval: () => false,
       isConcurrencySafe: () => true,
       isEnabled: () => true,
+      // 宿主支持 timeoutMs（tpi.d.ts:24）；实测最慢 35ms，这里给显式预算防止异常膨胀时拖死。
+      timeoutMs: 5000,
     },
     {
       definition: {
@@ -605,6 +656,8 @@ export function createTools(dataRoot) {
       requiresApproval: () => false,
       isConcurrencySafe: () => true,
       isEnabled: () => true,
+      // 宿主支持 timeoutMs（tpi.d.ts:24）；实测最慢 35ms，这里给显式预算防止异常膨胀时拖死。
+      timeoutMs: 5000,
     },
     {
       definition: {
@@ -628,6 +681,8 @@ export function createTools(dataRoot) {
       requiresApproval: () => false,
       isConcurrencySafe: () => true,
       isEnabled: () => true,
+      // 宿主支持 timeoutMs（tpi.d.ts:24）；实测最慢 35ms，这里给显式预算防止异常膨胀时拖死。
+      timeoutMs: 5000,
     },
     {
       definition: {
@@ -653,6 +708,8 @@ export function createTools(dataRoot) {
       requiresApproval: () => false,
       isConcurrencySafe: () => false,
       isEnabled: () => true,
+      // 宿主支持 timeoutMs（tpi.d.ts:24）；实测最慢 35ms，这里给显式预算防止异常膨胀时拖死。
+      timeoutMs: 5000,
     },
     {
       definition: {
@@ -677,6 +734,8 @@ export function createTools(dataRoot) {
       requiresApproval: () => true,
       isConcurrencySafe: () => false,
       isEnabled: () => true,
+      // 宿主支持 timeoutMs（tpi.d.ts:24）；实测最慢 35ms，这里给显式预算防止异常膨胀时拖死。
+      timeoutMs: 5000,
     },
     {
       definition: {
@@ -700,6 +759,8 @@ export function createTools(dataRoot) {
       requiresApproval: () => false,
       isConcurrencySafe: () => false,
       isEnabled: () => true,
+      // 宿主支持 timeoutMs（tpi.d.ts:24）；实测最慢 35ms，这里给显式预算防止异常膨胀时拖死。
+      timeoutMs: 5000,
     },
     {
       definition: {
@@ -723,6 +784,8 @@ export function createTools(dataRoot) {
       requiresApproval: () => false,
       isConcurrencySafe: () => false,
       isEnabled: () => true,
+      // 宿主支持 timeoutMs（tpi.d.ts:24）；实测最慢 35ms，这里给显式预算防止异常膨胀时拖死。
+      timeoutMs: 5000,
     },
   ]
 

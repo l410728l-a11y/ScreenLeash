@@ -54,6 +54,8 @@ function toTpiTool(tool) {
     inputSchema: tool.definition.input_schema,
     concurrencySafe: tool.isConcurrencySafe?.() === true,
     requiresApproval: tool.requiresApproval?.() === true,
+    // 宿主支持 timeoutMs（tpi.d.ts:24）；不声明就没有显式预算。
+    ...(typeof tool.timeoutMs === 'number' ? { timeoutMs: tool.timeoutMs } : {}),
     // 只有真的吃路径参数的工具才带这个字段：乱声明会让宿主对普通字符串做路径规范化。
     ...(Object.keys(pathParams).length > 0 ? { pathParams } : {}),
     // 透传完整 call：impl 层要靠它拿 cwd / sessionId
