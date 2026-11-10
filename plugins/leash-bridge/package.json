@@ -1,11 +1,6 @@
 {
   "name": "leash-bridge",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.4.0",
   "type": "module",
-  "description": "天枢插件：只读桥接 ScreenLeash（屏幕边缘挂件）的卡片数据",
-  "scripts": {
-    "test": "node --test ./test/impl.test.mjs ./test/index.test.mjs",
-    "check": "node tools/check-manifest.mjs"
-  }
+  "description": "天枢插件：连接 ScreenLeash（屏幕边缘挂件），读写屏幕四边的卡片"
 }

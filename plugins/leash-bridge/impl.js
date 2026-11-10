@@ -522,7 +522,48 @@ function fail(content) {
 export function createTools(dataRoot) {
   const root = () => dataRoot ?? defaultLeashRoot()
 
-  return [
+  /**
+   * 数据目录不存在时，全部工具返回同一条错误。
+   *
+   * 审核实测发现：对外披露写的是"未安装时所有工具仅返回未检测到数据目录"，
+   * 实际七個工具返回了五种不同形态（两个还是 isError=false）。
+   * 这里统一收口，保证披露与行为一致。
+   */
+  function withDataRootGuard(tool) {
+    const run = tool.execute
+    return {
+      ...tool,
+      execute(args, call) {
+        const target = root()
+        let isDir = false
+        try {
+          isDir = fs.statSync(target).isDirectory()
+        } catch {
+          isDir = false
+        }
+
+        if (!isDir) {
+          return {
+            content: JSON.stringify(
+              {
+                ok: false,
+                reason: 'not-installed',
+                dataRoot: target,
+                message: '未检测到 ScreenLeash 数据目录，请先安装并运行一次 ScreenLeash。',
+              },
+              null,
+              2
+            ),
+            isError: true,
+          }
+        }
+
+        return run(args, call)
+      },
+    }
+  }
+
+  const tools = [
     {
       definition: {
         name: 'leash_info',
@@ -680,6 +721,8 @@ export function createTools(dataRoot) {
       isEnabled: () => true,
     },
   ]
+
+  return tools.map(withDataRootGuard)
 }
 
 /** 工具名清单：清单文件、入口适配层、业务层三处必须一致（宿主准入条件）。 */

@@ -1,8 +1,25 @@
 /**
  * 宿主适配层 —— 只做「把 impl.js 接到天枢上」，不写业务逻辑。
  */
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { defineTianshuPlugin } from './tpi.js'
 import { createTools } from './impl.js'
+
+/**
+ * 运行时描述一律以清单为准。
+ *
+ * 审核实测过一个坑：清单里写简版描述、代码里写详版，宿主看到的两份文案不一致。
+ * 这里直接读清单覆盖，从物理上就不可能再分叉。
+ */
+const manifest = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'tianshu.plugin.json'), 'utf8')
+)
+const MANIFEST_DESCRIPTIONS = Object.fromEntries(
+  manifest.contributes.tools.map((t) => [t.name, t.description])
+)
 
 /**
  * 顶层路径参数声明表。
@@ -32,7 +49,8 @@ function toTpiTool(tool) {
   const pathParams = pathParamsFor(tool)
   return {
     name: tool.definition.name,
-    description: tool.definition.description,
+    // 描述以清单为唯一来源，避免运行时与清单两份文案不一致
+    description: MANIFEST_DESCRIPTIONS[tool.definition.name] ?? tool.definition.description,
     inputSchema: tool.definition.input_schema,
     concurrencySafe: tool.isConcurrencySafe?.() === true,
     requiresApproval: tool.requiresApproval?.() === true,

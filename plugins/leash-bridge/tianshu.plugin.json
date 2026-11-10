@@ -3,11 +3,14 @@
   "kind": "tianshu.plugin",
   "id": "leash-bridge",
   "displayName": "屏幕绳子桥",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "连接 ScreenLeash（屏幕边缘挂件）：读取挂在屏幕四边的卡片，也能挂上、删除、换边，或让挂件粘贴当前剪贴板内容。",
   "runtime": "agent",
   "entry": "index.js",
-  "capabilities": ["tools", "log"],
+  "capabilities": [
+    "tools",
+    "log"
+  ],
   "contributes": {
     "tools": [
       {
