@@ -21,13 +21,8 @@ TestResults/
 crash-*.log
 leash-out-*
 
-# ---- Rivet 本地缓存（知识包约束：不得提交） ----
-.rivet/knowledge/memory.jsonl
-.rivet/knowledge/*.sqlite
-.rivet/knowledge/*.sqlite-*
-.rivet/scratch/**/bin/
-.rivet/scratch/**/obj/
-.rivet/scratch/trytest/
+# ---- Rivet 本地目录（天枢工具产物：探针脚本/知识库/技能，不公开） ----
+.rivet/
 
 # ---- 天枢运行时状态（星流/检查点/记忆库，不随产品走） ----
 .rivet/starflow/
