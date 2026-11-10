@@ -135,6 +135,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _startupItem;
     private readonly MessageWindow _messageWindow;
     private readonly LeashHost _host;
+    private readonly System.Windows.Forms.Timer _inboxTimer;
     private readonly int _uiThreadId;
     private readonly SynchronizationContext? _uiContext;
 
@@ -204,6 +205,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // 接收器句柄必须在钩子可能投递之前交出去；构造里已强制建过句柄。
         _host.AttachPasteReceiver(_messageWindow.Handle);
 
+        // 外部写入通道（天枢插件等）：轮询 inbox\*.json 并落卡。
+        // 必须在 UI 线程上跑——ItemStore 的写操作要回投创建它的同步上下文。
+        _inboxTimer = new System.Windows.Forms.Timer { Interval = InboxPollIntervalMs };
+        _inboxTimer.Tick += async (_, _) => await PumpInboxAsync().ConfigureAwait(true);
+        _inboxTimer.Start();
+
         UpdateTooltip();
 
         ReportPasteFallbackState();
@@ -232,6 +239,68 @@ internal sealed class TrayApplicationContext : ApplicationContext
         icon.BalloonTipTitle = title;
         icon.BalloonTipText = text;
         icon.ShowBalloonTip(5000);
+    }
+
+    /// <summary>收件箱轮询间隔：足够快（1.5s 内挂上），也不至于白烧 CPU。</summary>
+    private const int InboxPollIntervalMs = 1500;
+
+    /// <summary>
+    /// 扫一轮收件箱。必须容忍「退出阶段定时器又跳一次」——此时 host 已释放，
+    /// 捕获后静默即可，不能弹气泡（托盘图标已销毁）。
+    /// </summary>
+    private async Task PumpInboxAsync()
+    {
+        try
+        {
+            var report = await InboxIngest
+                .PumpAsync(
+                    _host.Paths,
+                    _host.Store,
+                    _host.Settings,
+                    _host.ActiveEdge,
+
+                    // paste 动作转给挂件自己执行：和托盘「粘贴挂上（剪贴板）」走同一条代码路径，
+                    // 插件因此不需要 shell 权限，也不用复刻一遍 STA 读剪贴板。
+                    edge => _host.PasteFromClipboardAsync(edge))
+                .ConfigureAwait(true);
+
+            if (report.Affected > 0)
+            {
+                UpdateTooltip();
+
+                var summary = string.Empty;
+                if (report.Added > 0)
+                {
+                    summary += $"新增 {report.Added} ";
+                }
+
+                if (report.Removed > 0)
+                {
+                    summary += $"删除 {report.Removed} ";
+                }
+
+                if (report.Moved > 0)
+                {
+                    summary += $"移动 {report.Moved} ";
+                }
+
+                if (report.Pasted > 0)
+                {
+                    summary += $"粘贴 {report.Pasted} ";
+                }
+
+                ShowBalloon("收件箱已处理", summary.Trim() + "（来自天枢）");
+            }
+            else if (report.FilesRejected > 0 && report.LastError is not null)
+            {
+                ShowBalloon("收件箱有文件被拒", report.LastError);
+            }
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is ObjectDisposedException)
+        {
+            // 退出阶段/目录权限问题：不向用户抛错，细节已在 logs\inbox.log 里。
+            Debug.WriteLine("ScreenLeash: 收件箱轮询失败 - " + ex.Message);
+        }
     }
 
     /// <summary>
@@ -325,6 +394,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _trayIcon.Dispose();
             _menu.Dispose();
             _messageWindow.Dispose();
+            _inboxTimer.Stop();
+            _inboxTimer.Dispose();
             _host.Dispose();
 
             if (ReferenceEquals(Current, this))

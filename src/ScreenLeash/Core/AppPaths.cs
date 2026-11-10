@@ -16,6 +16,7 @@ public sealed class AppPaths
     public const string BlobFolderName = "blobs";
     public const string ThumbFolderName = "thumbs";
     public const string LogFolderName = "logs";
+    public const string InboxFolderName = "inbox";
     public const string ItemsFileName = "items.json";
 
     public const string SettingsFileName = "settings.json";
@@ -54,6 +55,18 @@ public sealed class AppPaths
 
     public string LogDirectory => Path.Combine(Root, LogFolderName);
 
+    /// <summary>
+    /// 外部写入通道：别的程序（如天枢插件）把待挂内容写成 JSON 放这里，本程序扫描后落卡。
+    /// 只接受 <c>.json</c>；写入方应先写 <c>.json.tmp</c> 再改名，否则可能被读到半个文件。
+    /// </summary>
+    public string InboxDirectory => Path.Combine(Root, InboxFolderName);
+
+    /// <summary>已处理完的收件文件归档（移进来就不会再被扫描，防重复落卡）。</summary>
+    public string InboxDoneDirectory => Path.Combine(InboxDirectory, "done");
+
+    /// <summary>坏文件归档：解析失败或整体被拒时移进来，留档排查，不自动删除。</summary>
+    public string InboxBadDirectory => Path.Combine(InboxDirectory, "bad");
+
     public string ItemsFile => Path.Combine(Root, ItemsFileName);
 
     /// <summary>用户设置文件（四边启用、钩子开关等）；与 items.json 同目录但不参与卡片事务。</summary>
@@ -71,6 +84,9 @@ public sealed class AppPaths
         Directory.CreateDirectory(BlobDirectory);
         Directory.CreateDirectory(ThumbDirectory);
         Directory.CreateDirectory(LogDirectory);
+        Directory.CreateDirectory(InboxDirectory);
+        Directory.CreateDirectory(InboxDoneDirectory);
+        Directory.CreateDirectory(InboxBadDirectory);
     }
 
     /// <summary>相对文件名 → blobs/ 下的绝对路径；名字非法（含分隔符/绝对路径/遍历）时返回 null。</summary>

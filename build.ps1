@@ -8,7 +8,9 @@
     - build          : Release build of the main project (expects 0 warnings, 0 errors).
     - test           : Run all unit tests.
     - publish        : Publish to publish\framework-dependent (default, reuses Desktop Runtime 8.0.33).
-                       Pass -SelfContained for a single-file self-contained build in publish\self-contained.
+                       Pass -SelfContained for a directory-form self-contained build in publish\standalone
+                       (starts fast, no self-extract, no AV false positives).
+                       Add -SingleFile to get the old single-file bundle in publish\self-contained instead.
     - verify-metrics : Raw-pixel gate - dotnet test --filter FullyQualifiedName~NoRawPixel, exit 1 on failure.
 
     Every target points DOTNET_ROOT at the private SDK on this machine
@@ -27,7 +29,9 @@ param(
     [ValidateSet('build', 'test', 'publish', 'verify-metrics')]
     [string]$Target = 'build',
 
-    [switch]$SelfContained
+    [switch]$SelfContained,
+
+    [switch]$SingleFile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -81,11 +85,20 @@ switch ($Target) {
     'publish' {
         $publishRoot = Join-Path $root 'publish'
         if ($SelfContained) {
-            $out = Join-Path $publishRoot 'self-contained'
-            Invoke-Dotnet -Arguments @(
-                'publish', $project, '-c', 'Release', '-r', 'win-x64',
-                '--self-contained', 'true', '-p:PublishSingleFile=true',
-                '-p:IncludeNativeLibrariesForSelfExtract=true', '-o', $out)
+            if ($SingleFile) {
+                $out = Join-Path $publishRoot 'self-contained'
+                Invoke-Dotnet -Arguments @(
+                    'publish', $project, '-c', 'Release', '-r', 'win-x64',
+                    '--self-contained', 'true', '-p:PublishSingleFile=true',
+                    '-p:IncludeNativeLibrariesForSelfExtract=true', '-o', $out)
+            }
+            else {
+                # Directory form: no self-extract step, faster cold start, fewer AV false positives.
+                $out = Join-Path $publishRoot 'standalone'
+                Invoke-Dotnet -Arguments @(
+                    'publish', $project, '-c', 'Release', '-r', 'win-x64',
+                    '--self-contained', 'true', '-p:PublishSingleFile=false', '-o', $out)
+            }
         }
         else {
             $out = Join-Path $publishRoot 'framework-dependent'
