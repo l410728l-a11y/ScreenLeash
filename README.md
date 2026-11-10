@@ -6,7 +6,7 @@
 > 当前状态：**功能完整可运行**。`src` 下 27 个 `.cs` / 8,258 行，`tests` 193 项全部通过；
 > 四边绳子、卡片数据层、收件箱通道（外部程序投递）、全局 Ctrl+V 粘贴、托盘菜单均已接入。
 >
-> **已知未做**：exe 未做代码签名（首次运行会被 SmartScreen 拦截，走「更多信息 → 仍要运行」）；无自动更新；多显示器下的绳条位置记忆未验证。
+> **已知未做**：exe 只做了**自签名**（证书 `CN=ScreenLeash Self-Signed`，不在系统信任根内，Windows 会显示「未知发布者」，SmartScreen 仍可能拦截）；无自动更新；多显示器下的绳条位置记忆未验证。
 
 ## 环境
 
@@ -82,8 +82,20 @@ dotnet src\ScreenLeash\bin\Release\net8.0-windows\ScreenLeash.exe
 - 临时拖出目录：`%TEMP%\ScreenLeash\`
 
 Windows Defender：设置 → 隐私和安全性 → Windows 安全中心 → 病毒和威胁防护 →
-管理设置 → 排除项 → 添加文件夹。未签名的 exe 首次运行会被 SmartScreen 拦截，
-选择「更多信息 → 仍要运行」即可。
+管理设置 → 排除项 → 添加文件夹。
+
+### SmartScreen 拦截怎么过
+
+发布包里的 `ScreenLeash.exe` 已用自签名证书签过（`CN=ScreenLeash Self-Signed`），
+但**自签名不在系统信任根内**，所以 Windows 会把它当成「未知发布者」——`signtool` 验证会报
+「已处理证书链，但是在不受信任提供程序信任的根证书中终止」。这三种办法都能过，任选一：
+
+1. **用 7-Zip 解压**（推荐）：7-Zip 不像资源管理器那样给解压出的文件写「来自互联网」标记，
+   没有该标记就不会触发 SmartScreen。
+2. **解压后右键 `ScreenLeash.exe` → 属性 → 勾选底部「解除锁定」→ 应用**。
+3. **PowerShell**：`Unblock-File .\ScreenLeash.exe`
+
+都不要的话，在拦截弹窗里点「更多信息 → 仍要运行」也能启动。
 
 ## 门禁实现补充（metrics-dpi 条目的实测口径）
 
