@@ -1,0 +1,14 @@
+{
+  "schema": "xiaosi.contents/1",
+  "files": {
+    "tianshu.plugin.json": "dad015021ed1a69114c1aac2a9e9a582e81e2de4f3893c42a810b89ea49a8e2c",
+    "index.js": "fe34bd6dbaa25b4bff5026630b408f370c6f5ac9211bbd6c69d559d853b75b2f",
+    "impl.js": "b06b7c894b3f80c82449b0a8bbe82587a4ff738a7d402e793b31ed25bc4a802b",
+    "tpi.js": "ca4212a4d1b82fc1fdd69d424e8055a0f3df611876c4b7065ac3252fb571702a",
+    "tpi.d.ts": "316c6da96b539ec3a28bff55caafde1ca5b975e5b523496f21ab8ebf40b48227",
+    "package.json": "9902ab223056effb27ff8f5a50f71818fd76bda6598c0404505a16dbd8c04ff0",
+    "README.md": "fe00dfb95f7ea4dbda109a4785b764d0ad83350853ff9a9179d20a1d42c5fdb8",
+    "LICENSE": "6148bed76763bcfd321f29dee63fe573e760c3672fa4856507d2c5c96c7538b7",
+    "xiaosi.release.json": "610daae1d8117a6dd141da2c78b264a98d36f5baaf0c36e1c185253f7f2c0053"
+  }
+}

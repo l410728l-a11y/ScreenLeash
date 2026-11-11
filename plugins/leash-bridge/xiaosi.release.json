@@ -1,0 +1,20 @@
+{
+  "schema": "xiaosi.release/1",
+  "release_id": "rel_leash-bridge_041",
+  "publisher_id": "c1b6c0c9-da2a-4e36-9dba-bbaf9c9d1da4",
+  "plugin_id": "leash-bridge",
+  "version": "0.4.1",
+  "channel": "stable",
+  "runtime": "agent",
+  "compatibility": {
+    "tpi": "1.0",
+    "core": ">=4.0.2 <5.0.0",
+    "platforms": [
+      "win32-x64"
+    ]
+  },
+  "data_schema": 1,
+  "migration_kind": "none",
+  "permission_digest": "071f2fd060e1833de37c49a6867443894aebce53e40cbea3814241bc9c0ed980",
+  "source_commit": "477cfe5e0b317adad4fcb7a19013d58dce31a36a"
+}
