@@ -1,0 +1,18 @@
+# 强制文本文件以 LF 存储与检出。
+#
+# 为什么需要：xiaosi.contents.json 记录的是包内文件（LF）的 SHA-256。
+# Windows 上 core.autocrlf=true（默认常见配置）时，如果没有本文件，
+# git 会在检出时把 LF 转成 CRLF，导致复算哈希与 contents.json 全部不符，
+# 插件校验（validate）会失败。固定 eol=lf 后，任何平台检出结果一致。
+* text=auto eol=lf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.pdb binary
