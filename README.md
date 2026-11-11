@@ -57,6 +57,18 @@ dotnet src\ScreenLeash\bin\Release\net8.0-windows\ScreenLeash.exe
 构成 Ctrl+V，不记录、不缓存、不发送按键内容；钩子装不上时降级为托盘菜单手动粘贴，并在启动
 气泡里点名降级路径。
 
+## Code signing
+
+This project has applied to the [SignPath Foundation](https://signpath.org/) free code
+signing program for open source projects. Once the application is approved, Windows
+release binaries will be Authenticode-signed with a certificate issued through that
+program, so that the publisher identity of each download can be verified.
+
+Until then, release executables carry a self-signed certificate
+(`CN=ScreenLeash Self-Signed`), which is **not** in the OS trust store — Windows may
+still show a SmartScreen warning. See 「SmartScreen 拦截怎么过」 below for the three
+ways to proceed.
+
 ## 裸像素门禁（verify-metrics）
 
 `tests\ScreenLeash.Tests` 里的 `NoRawPixelScanner` 扫描 `src\ScreenLeash\UI` 与
