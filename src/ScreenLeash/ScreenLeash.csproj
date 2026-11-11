@@ -16,7 +16,7 @@
     <AssemblyName>ScreenLeash</AssemblyName>
     <Product>ScreenLeash</Product>
     <Description>常驻屏幕边缘的绳子挂件：把截图、图片或一句话挂到屏幕四边，需要时再拖出来。</Description>
-    <Version>0.1.0-alpha</Version>
+    <Version>0.1.2</Version>
     <NeutralLanguage>zh-Hans</NeutralLanguage>
 
     <EnableWindowsTargeting>true</EnableWindowsTargeting>

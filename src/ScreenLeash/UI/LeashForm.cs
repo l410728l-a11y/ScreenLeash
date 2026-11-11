@@ -526,14 +526,32 @@ public sealed class LeashForm : Form
     /// 拖放行为受 Capture / OLE / 窗口样式共同影响，读代码定不了因，
     /// 只能把事件序列和关键状态打出来看。日志失败绝不影响功能。
     /// </summary>
+    private const long DragDiagMaxBytes = 1024 * 1024; // metrics-ok: 日志字节上限，与像素/尺寸无关
+
     private static void DragDiag(string message)
     {
         try
         {
             var dir = Path.Combine(AppPaths.Default.Root, "logs");
             Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "drag-diag.log");
+
+            // 无上限的追加在长时间运行下会无界增长（实测启动阶段约 200 字节/秒）。
+            // 超过上限就截断重写，只留一行标记，避免日志成了磁盘黑洞。
+            var info = new FileInfo(path);
+            if (info.Exists && info.Length >= DragDiagMaxBytes)
+            {
+                File.WriteAllText(
+                    path,
+                    string.Format(
+                        "[{0:yyyy-MM-dd HH:mm:ss}] log truncated: exceeded {1} bytes{2}",
+                        DateTime.Now,
+                        DragDiagMaxBytes,
+                        Environment.NewLine));
+            }
+
             File.AppendAllText(
-                Path.Combine(dir, "drag-diag.log"),
+                path,
                 DateTime.Now.ToString("HH:mm:ss.fff") + " " + message + Environment.NewLine);
         }
         catch
