@@ -28,9 +28,10 @@
 | `leash_read` | 单张卡完整内容：文本卡返回原文；图片/文件卡返回 blob 绝对路径 | 否 |
 | `leash_put` | 挂一条文本或本地文件（`path` 是顶层参数，走宿主路径守卫） | 否 |
 | `leash_remove` | 删掉一张卡（**不可恢复**） | **是** |
+| `leash_move` | 把一张卡片移到另一条边（`left` / `top` / `right` / `bottom`） | 否 |
 | `leash_paste` | 让挂件粘贴系统剪贴板当前内容（插件不读剪贴板） | 否 |
 
-`leash_read` / `leash_remove` 的 `id` 都支持 ≥4 位前缀；歧义时返回候选而不猜。
+`leash_read` / `leash_remove` / `leash_move` 的 `id` 都支持 ≥4 位前缀；歧义时返回候选而不猜。
 前缀展开在插件侧完成，**落盘端只接受完整 Guid**（防手抖前缀删错卡）。
 
 收件箱线格式是 v2，一个文件一条命令，`action ∈ {add, remove, move, paste}`（缺省 `add`）。
