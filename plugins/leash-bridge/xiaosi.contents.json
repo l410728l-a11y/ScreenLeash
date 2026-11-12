@@ -1,14 +1,14 @@
 {
   "schema": "xiaosi.contents/1",
   "files": {
-    "tianshu.plugin.json": "dad015021ed1a69114c1aac2a9e9a582e81e2de4f3893c42a810b89ea49a8e2c",
+    "tianshu.plugin.json": "a84907aa8070ccba91e000a1d818a811e12ba1ccc766095b2a6bd4f709c3e9f6",
     "index.js": "fe34bd6dbaa25b4bff5026630b408f370c6f5ac9211bbd6c69d559d853b75b2f",
     "impl.js": "b06b7c894b3f80c82449b0a8bbe82587a4ff738a7d402e793b31ed25bc4a802b",
     "tpi.js": "ca4212a4d1b82fc1fdd69d424e8055a0f3df611876c4b7065ac3252fb571702a",
     "tpi.d.ts": "316c6da96b539ec3a28bff55caafde1ca5b975e5b523496f21ab8ebf40b48227",
-    "package.json": "9902ab223056effb27ff8f5a50f71818fd76bda6598c0404505a16dbd8c04ff0",
+    "package.json": "811906b426da3f8a451b895005a1e02a0372b25e00782d11b94fe46ce981a2cb",
     "README.md": "f0cd3f8b3200aa06cbee42de9cc115dc2b93deca5e0adff4c80284e4dba99a6a",
     "LICENSE": "6148bed76763bcfd321f29dee63fe573e760c3672fa4856507d2c5c96c7538b7",
-    "xiaosi.release.json": "8280bba55b853ee0ad5c53f5e6d1dec1191489394ed9a36d17fbae82ec9c7b00"
+    "xiaosi.release.json": "bdd8a7d1cce841c6cfe8a34efd9192e7cabaa6ae7979e2b6880621181ac8e100"
   }
 }
