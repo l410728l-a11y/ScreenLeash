@@ -14,7 +14,7 @@ namespace ScreenLeash.Core;
 /// </summary>
 public sealed class AppSettings
 {
-    public const int SchemaVersion = 3;
+    public const int SchemaVersion = 4;
 
     public const string StartupRegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     public const string StartupValueName = "ScreenLeash";
@@ -71,6 +71,14 @@ public sealed class AppSettings
 
     /// <summary>文本卡片保存的字符数上限。</summary>
     public int TextPreviewChars { get; set; } = 1000;
+
+    // ── 文本卡片外观（v4 新增）────────────────────────────
+    /// <summary>文字卡字号（DIP）。默认 11，范围 9–20。
+    /// 字号同时影响沿边长度：行高按字号线性折算。</summary>
+    public int TextFontSize { get; set; } = 11;
+
+    /// <summary>文字卡最多显示行数，决定最大沿边长度。默认 6，范围 1–12。</summary>
+    public int TextMaxLines { get; set; } = 6;
 
     // ── 启动 ─────────────────────────────────────────────────────
     public bool StartWithWindows { get; set; }
@@ -207,6 +215,8 @@ public sealed class AppSettings
         DragOutRetentionSeconds = Math.Clamp(DragOutRetentionSeconds, 5, 600);
         ClipboardThrottleMs = Math.Clamp(ClipboardThrottleMs, 100, 5000);
         TextPreviewChars = Math.Clamp(TextPreviewChars, 64, 10000);
+        TextFontSize = Math.Clamp(TextFontSize, Metrics.TextFontSizeMin, Metrics.TextFontSizeMax);
+        TextMaxLines = Math.Clamp(TextMaxLines, Metrics.TextMaxLinesMin, Metrics.TextMaxLinesMax);
     }
 
     /// <summary>写入/删除 HKCU Run 开机自启项。返回是否成功（失败不抛）。</summary>

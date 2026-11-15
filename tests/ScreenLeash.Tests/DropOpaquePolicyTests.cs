@@ -131,3 +131,40 @@ public class DropOpaquePolicyTests
         Assert.True(opaque);
     }
 }
+
+/// <summary>
+/// 拖动**自己卡片**的启动瞬间：鼠标按下并移动了，但 PollDrag 还没跑到
+/// （_internalDrag / _dragging 都还是 false），旧判据会把它当成「外部东西拖进来」，
+/// 于是源窗口在展开成 140dip 的过程中整块变近黑——用户看到的就是「拖出来之后
+/// 还没松手之前那一大片黑框」，宽度和外部拖入时的 40dip 细带完全不一致。
+/// </summary>
+public class DropOpaquePolicyOwnCardTests
+{
+    [Fact]
+    public void 按住的是自己的卡片_即使移动了也不该变不透明()
+    {
+        bool opaque = DropOpaquePolicy.ShouldBeOpaque(
+            leftDown: true,
+            movedWhilePressed: true,
+            dropHighlighted: false,
+            draggingCard: false,
+            cursorInsideWindow: true,
+            pressOnOwnCard: true);
+
+        Assert.False(opaque);
+    }
+
+    [Fact]
+    public void 没有按在自己卡片上时_行为保持不变()
+    {
+        bool opaque = DropOpaquePolicy.ShouldBeOpaque(
+            leftDown: true,
+            movedWhilePressed: true,
+            dropHighlighted: false,
+            draggingCard: false,
+            cursorInsideWindow: true,
+            pressOnOwnCard: false);
+
+        Assert.True(opaque);
+    }
+}

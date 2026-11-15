@@ -171,6 +171,52 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var pasteItem = new ToolStripMenuItem("粘贴挂上（剪贴板）", null, async (_, _) => await _host.PasteFromClipboardAsync());
         var openItem = new ToolStripMenuItem("打开数据目录", null, (_, _) => OpenDataFolder());
+
+        // 绳子显示：四条边各自开关。默认只有右侧（AppSettings 的默认值）。
+        // 勾选状态直接读设置，与 AppSettings.Load 的 v2→v3 迁移保持一致
+        // （迁移只在 Version < 3 时执行，v3 文件里用户手动开的边不会被改回 false）。
+        var edgeMenu = new ToolStripMenuItem("绳子显示");
+        foreach ((EdgeKind edge, string label) in new[]
+        {
+            (EdgeKind.Right, "右侧（默认）"),
+            (EdgeKind.Left, "左侧"),
+            (EdgeKind.Top, "顶部"),
+            (EdgeKind.Bottom, "底部"),
+        })
+        {
+            var edgeItem = new ToolStripMenuItem(label)
+            {
+                CheckOnClick = true,
+                Checked = _host.Settings.IsEdgeEnabled(edge),
+                Tag = edge,
+            };
+            edgeItem.Click += (_, _) => ToggleEdge(edge, edgeItem);
+            edgeMenu.DropDownItems.Add(edgeItem);
+        }
+
+        // 文字字号：同时改变文字卡的字号与沿边长度（行高按字号线性折算）。
+        // 档值与 Metrics.TextFontSizeMin..Max 的范围一致；11 是默认值。
+        var fontMenu = new ToolStripMenuItem("文字字号");
+        foreach (var size in new[] { 9, 11, 13, 15, 17 })
+        {
+            var fontItem = new ToolStripMenuItem(size + " DIP") { Tag = size };
+            fontItem.Click += (_, _) => ApplyTextFontSize(size);
+            fontMenu.DropDownItems.Add(fontItem);
+        }
+
+        // 展开时回显当前值：勾选状态读设置，不自己维护一份状态。
+        fontMenu.DropDownOpening += (_, _) =>
+        {
+            var current = _host.Settings.TextFontSize;
+            foreach (ToolStripItem item in fontMenu.DropDownItems)
+            {
+                if (item is ToolStripMenuItem menuItem && menuItem.Tag is int size)
+                {
+                    menuItem.Checked = size == current;
+                }
+            }
+        };
+
         _startupItem = new ToolStripMenuItem("开机自启", null, (_, _) => ToggleStartup())
         {
             Checked = AppSettings.IsStartupRegistered(),
@@ -183,6 +229,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _menu.Items.Add(_pasteHookItem);
         _menu.Items.Add(pasteItem);
         _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(edgeMenu);
+        _menu.Items.Add(fontMenu);
         _menu.Items.Add(_startupItem);
         _menu.Items.Add(openItem);
         _menu.Items.Add(new ToolStripSeparator());
@@ -343,6 +391,36 @@ internal sealed class TrayApplicationContext : ApplicationContext
         bool visible = _host.ToggleVisibility();
         _toggleItem.Text = visible ? "隐藏绳子" : "显示绳子";
         UpdateTooltip();
+    }
+
+    /// <summary>
+    /// 切换某条边的显示。四条边全关时回弹勾选并提示：
+    /// 绳子整体消失后用户无法从界面找回（托盘图标也只在托盘里，不常驻）。
+    /// </summary>
+    private void ToggleEdge(EdgeKind edge, ToolStripMenuItem item)
+    {
+        // 先在副本上试算，避免「已经改了设置、发现要回弹、再改回来」的中间态。
+        var probe = _host.Settings.Clone();
+        probe.SetEdgeEnabled(edge, item.Checked);
+        if (!probe.HasAnyEdge)
+        {
+            item.Checked = true;
+            Program.Notify("至少保留一条绳子", "四条边全关后，绳子会整体消失且无法从界面找回");
+            return;
+        }
+
+        _host.Settings.SetEdgeEnabled(edge, item.Checked);
+        _host.ApplySettings();   // Normalize → Save → topology.Rebuild → RebuildForms
+    }
+
+    /// <summary>
+    /// 应用文字字号。走与边开关同一条 <see cref="LeashHost.ApplySettings"/> 链路：
+    /// 字号影响文字卡的沿边长度，必须重建窗口才能让布局立刻生效。
+    /// </summary>
+    private void ApplyTextFontSize(int size)
+    {
+        _host.Settings.TextFontSize = size;
+        _host.ApplySettings();
     }
 
     private void ToggleStartup()

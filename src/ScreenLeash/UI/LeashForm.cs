@@ -31,10 +31,30 @@ public sealed class LeashForm : Form
 
     private LeashVisualState _state = LeashVisualState.Idle;
     private int _thicknessPx;
+
+    // ── 时间基过渡（Wave 2）───────────────────────────────────
+    // 原实现用离散步长（|Δ|/EaseDivisor）且由 40ms 探测时钟驱动，
+    // 40→140dip 只能走出 5 帧，等效 25fps 的台阶感。
+    // 现在：探测时钟只定目标，动画时钟（16ms）按时间进度推 ease-out。
+    private float _animT;
+    private int _animFromPx;
+    private int _animToPx = int.MinValue;
     private int _scrollPx;
     private int _hoverIndex = -1;
     private int _pressedIndex = -1;
     private Point _pressPoint;
+
+    /// <summary>上一次 PollDrag 的光标位置，用来判断「停住了」还是「正在划过去」。</summary>
+    private Point _lastPollCursor;
+
+    /// <summary>光标停在别的程序窗口上、且没在移动的累计毫秒数（拖出判定用）。</summary>
+    private int _outsideIdleMs;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(Point point);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     private bool _dragging;
     private bool _dropTarget;
 
@@ -50,11 +70,36 @@ public sealed class LeashForm : Form
     /// </summary>
     public bool IsDraggingCard => _internalDrag || _dragging;
 
+    /// <summary>
+    /// 本窗口是否有一张卡片正被按住。拖动自己卡片的**启动瞬间**唯一的可靠信号：
+    /// 那时 <see cref="IsDraggingCard"/> 还是 false（PollDrag 尚未跑到），
+    /// 不靠它就会把源窗口当成「外部东西拖进来」而整块变黑。
+    /// </summary>
+    public bool HasPressedCard => _pressedIndex >= 0;
+
+    /// <summary>
+    /// 光标是否落在该边的磁铁感应区（跨边拖的落点范围）。
+    /// 拖自己卡片时只有命中的那条边才取消透明——否则四条边同时变黑，
+    /// 用户看到的是"四周一圈黑框"（反馈原话）。
+    /// </summary>
+    public bool IsCursorNearEdge(Point screenPoint)
+        => EdgeGeometry.IsCursorInTriggerZone(
+            Edge,
+            _slot.Screen.WorkingArea,
+            screenPoint,
+            Metrics.Px(Metrics.MagnetSnapZone, Dpi));
+
     /// <summary>正在做"绳子内部拖动排序"（未交给 OLE）。</summary>
     private bool _internalDrag;
 
     /// <summary>磁铁吸附高亮：别的绳子拖东西过来时本窗口亮起。</summary>
     private bool _magnetHighlight;
+
+    /// <summary>上一次写绘制诊断时的厚度（只在变化时记一行，避免刷屏）。</summary>
+    private int _diagLastPaintThickness = -1;
+
+    /// <summary>是否已经把卡片槽位矩形打进日志（每实例一次，避免刷屏）。</summary>
+    private bool _diagSlotLogged;
 
     /// <summary>上一次 DrawSurface 是否画了底色（用于只在切换时打日志，避免每帧刷屏）。</summary>
     private bool _lastDrewSurface;
@@ -129,6 +174,13 @@ public sealed class LeashForm : Form
     /// <summary>该边当前挂了几张卡片。</summary>
     public int ItemCount => _store.ForEdge(Edge).Count;
 
+    /// <summary>文字卡排版参数：设置 → 纯布局参数的唯一换算点。
+    /// 设置值已由 AppSettings.Normalize 夹取过，这里再夹一次是为了单元测试直接构造
+    /// 非法设置时布局仍不越界。</summary>
+    private TextCardStyle TextStyle => new(
+        Math.Clamp(_settings.TextFontSize, Metrics.TextFontSizeMin, Metrics.TextFontSizeMax),
+        Math.Clamp(_settings.TextMaxLines, Metrics.TextMaxLinesMin, Metrics.TextMaxLinesMax));
+
     /// <summary>是否处于展开（悬停/拖拽）。</summary>
     public bool IsExpanded => EdgeGeometry.IsExpanded(_state);
 
@@ -181,6 +233,9 @@ public sealed class LeashForm : Form
 
         _dropOpaque = opaque;
 
+        // 诊断：这层不透明切换会让整窗变近黑；频繁 true/false 就会表现为「贴着绳子的黑色频闪」。
+        DragDiag("SetDropOpaque " + opaque + " edge=" + Edge + " thick=" + _thicknessPx);
+
         if (opaque)
         {
             TransparencyKey = Color.Empty;
@@ -195,6 +250,48 @@ public sealed class LeashForm : Form
         Invalidate();
     }
 
+    /// <summary>拖放期间是否把窗口加宽到磁铁吸附半径，让「黑框」和「能放下的范围」是同一个矩形。</summary>
+    private bool _dropReceive;
+
+    /// <summary>
+    /// 拖放接收模式：把窗口厚度临时撑到 <see cref="Metrics.MagnetSnapZone"/>。
+    ///
+    /// <para><b>为什么需要</b>：OLE 的命中区**就是窗口矩形**。收起态窗口只有 40dip，
+    /// 而磁铁吸附半径是 90dip —— 用户按住卡片停在离绳子 50dip 处时，视觉上已经"贴住了"，
+    /// 光标却落在窗口外，收不到任何拖放事件，卡片放不下去。
+    /// 把接收期的窗口撑到 90dip，黑框（不透明区）、命中区、磁铁吸附半径三者重合。</para>
+    ///
+    /// <para><b>只对接收方生效</b>：源窗口正在拖自己的卡片，撑宽只会变成一大块黑框，
+    /// 而那片黑框并不接受落点（放回源边等于没移动），必须排除。</para>
+    /// </summary>
+    public void SetDropReceive(bool on)
+    {
+        if (_dropReceive == on)
+        {
+            return;
+        }
+
+        _dropReceive = on;
+
+        // **必须同步撑开**，不能等 LeashHost.OnTick 下一帧：
+        // DoDragDrop 是模态循环，拖拽期间 OnTick 基本不跑（实测：整个 1.6 秒拖拽里
+        // 窗口厚度一次都没变，拖拽结束后才从 50 跳到 113）。
+        // 等 Tick 去撑宽 = 整个拖拽过程都停在 40dip，光标落在 40~90dip 之间就放不下去，
+        // 而用户看到的黑框（窗口矩形）和真正能接住的区域就成了两个尺寸。
+        if (on)
+        {
+            var px = Math.Max(_thicknessPx, Metrics.Px(Metrics.MagnetSnapZone, Dpi));
+            _thicknessPx = px;
+            _animFromPx = px;
+            _animToPx = px;
+            _animT = 1f;
+            Bounds = EdgeGeometry.ComputeWithThickness(Edge, _slot.Screen.WorkingArea, px);
+            Invalidate();
+        }
+
+        DragDiag("SetDropReceive " + on + " edge=" + Edge + " thick=" + _thicknessPx);
+    }
+
     public void EvaluateCursor(Point cursor, bool leftButtonDown, bool mayBeDragging = false)
     {
         // 帧间状态必须在任何提前 return **之前**更新：
@@ -204,9 +301,16 @@ public sealed class LeashForm : Form
         var justPressed = leftButtonDown && !_prevLeftDown;
         _prevLeftDown = leftButtonDown;
 
-        if (_dragging || _dropTarget)
+        if (_dragging)
         {
             SetState(LeashVisualState.Dragging);
+            return;
+        }
+
+        // 有拖入物正在悬停（跨边拖或外部拖入）：保持当前尺寸不动。
+        // 不能展开——不透明窗口一展开就变成一大块黑框（用户反馈“黑框很宽”）。
+        if (_dropTarget)
+        {
             return;
         }
 
@@ -300,13 +404,31 @@ public sealed class LeashForm : Form
         SetState(inZone || insideWindow ? LeashVisualState.Hover : LeashVisualState.Idle);
     }
 
-    /// <summary>由宿主每 tick 调用：推进厚度缓动与透明度。</summary>
+    /// <summary>
+    /// 由宿主每 tick（40ms）调用：**只判定目标厚度**，不推进动画。
+    /// 目标变化时重置过渡起点；推进交给 <see cref="AdvanceAnimation"/>（动画时钟 16ms）。
+    /// </summary>
     public void Tick()
     {
         var area = _slot.Screen.WorkingArea;
         var collapsed = Metrics.Px(Metrics.CollapsedThickness, Dpi);
         var expanded = Metrics.Px(Metrics.ExpandedThickness, Dpi);
         var target = EdgeGeometry.IsExpanded(_state) ? expanded : collapsed;
+
+        // 拖放接收期：窗口必须撑到磁铁吸附半径。否则用户停在离绳子 50dip 处时，
+        // 视觉上已经贴住，光标却在窗口外，OLE 收不到任何事件——放不下去。
+        if (_dropReceive)
+        {
+            target = Math.Max(target, Metrics.Px(Metrics.MagnetSnapZone, Dpi));
+        }
+
+        if (target != _animToPx)
+        {
+            // 目标变了：以当前实际厚度为起点重新开始过渡（支持中途反向）。
+            _animFromPx = _thicknessPx;
+            _animToPx = target;
+            _animT = 0f;
+        }
 
         if (_thicknessPx == target)
         {
@@ -318,17 +440,43 @@ public sealed class LeashForm : Form
                 Bounds = expected;
                 Invalidate();
             }
+        }
+    }
 
-            return;
+    /// <summary>是否处于厚度过渡中（宿主据此启动动画时钟）。</summary>
+    public bool IsTransitioning => _animT < 1f && _animFromPx != _animToPx;
+
+    /// <summary>
+    /// 由宿主在过渡期以动画时钟（<see cref="Metrics.AnimFrameIntervalMs"/>）调用：
+    /// 按时间进度推进 ease-out，返回是否仍在过渡。
+    /// 与原实现一致：**只有厚度真正变化时才 SetBounds / Invalidate**。
+    /// </summary>
+    /// <returns>true = 还需继续调用；false = 已到底或无需动画。</returns>
+    public bool AdvanceAnimation()
+    {
+        if (_animT >= 1f || _animFromPx == _animToPx)
+        {
+            return false;
         }
 
-        var delta = target - _thicknessPx;
-        var step = Math.Max(Metrics.Px(Metrics.MinEaseStep, Dpi), Math.Abs(delta) / Metrics.EaseDivisor);
-        var next = _thicknessPx + (Math.Sign(delta) * Math.Min(step, Math.Abs(delta)));
+        var step = (float)(Metrics.AnimFrameIntervalMs / (double)Metrics.AnimDurationMs);
+        _animT = Math.Min(1f, _animT + step);
+
+        var eased = 1f - MathF.Pow(1f - _animT, Metrics.EasePower);
+        var next = (int)Math.Round(_animFromPx + ((_animToPx - _animFromPx) * eased));
+
+        if (next == _thicknessPx)
+        {
+            return _animT < 1f;   // 这一帧厚度没变（步长不足 1px），过渡未完
+        }
+
         _thicknessPx = next;
 
+        var area = _slot.Screen.WorkingArea;
         Bounds = EdgeGeometry.ComputeWithThickness(Edge, area, next);
 
+        var collapsed = Metrics.Px(Metrics.CollapsedThickness, Dpi);
+        var expanded = Metrics.Px(Metrics.ExpandedThickness, Dpi);
         var span = Math.Max(1, expanded - collapsed);
         var ratio = Math.Clamp((_thicknessPx - collapsed) / (float)span, 0f, 1f);
         var opacity = Metrics.CollapsedOpacity + ((Metrics.ExpandedOpacity - Metrics.CollapsedOpacity) * ratio);
@@ -339,13 +487,14 @@ public sealed class LeashForm : Form
         }
 
         Invalidate();
+        return _animT < 1f;
     }
 
     /// <summary>卡片集合变化后刷新（不改变状态）。</summary>
     public void RefreshItems()
     {
         _hoverIndex = -1;
-        _scrollPx = EdgeLayout.ClampScroll(Edge, ClientRectangle, Dpi, ItemCount, _scrollPx);
+        _scrollPx = EdgeLayout.ClampScroll(Edge, ClientRectangle, Dpi, _store.ForEdge(Edge), TextStyle, _scrollPx);
         Invalidate();
     }
 
@@ -386,6 +535,17 @@ public sealed class LeashForm : Form
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
         var items = _store.ForEdge(Edge);
+
+        // 诊断：放在所有门控**之前**。之前埋在门控后面，导致动画早期帧根本不写日志，
+        // 排查「贴绳黑线」时看不到关键那几帧。现在只要厚度变了就记一行。
+        if (_thicknessPx != _diagLastPaintThickness)
+        {
+            _diagLastPaintThickness = _thicknessPx;
+            DragDiag("Paint edge=" + Edge + " thick=" + _thicknessPx + " client=" + client.Width + "x" + client.Height
+                + " state=" + _state + " items=" + items.Count + " hover=" + _hoverIndex
+                + " opaque=" + _dropOpaque + " dropTarget=" + _dropTarget + " magnet=" + _magnetHighlight);
+        }
+
         if (items.Count == 0)
         {
             return;
@@ -400,7 +560,39 @@ public sealed class LeashForm : Form
             return;
         }
 
-        var slots = EdgeLayout.Compose(Edge, client, Dpi, items.Count, _scrollPx);
+        // 状态已展开但厚度还在动画中间时也不能画：窗口仍很窄，卡片（196dip）会被裁成一条竖线/横线，
+        // 表现为「鼠标靠近时贴着绳子出现灰黑色或灰蓝色的线状频闪」。
+        // 原实现不会露这个中间帧，因为状态变更与厚度推进在同一个 40ms tick 内完成；
+        // 现在厚度由 16ms 动画时钟独立推进，必须用**几何**而不是状态来门控。
+        var expandedPx = Metrics.Px(Metrics.ExpandedThickness, Dpi);
+        if (_thicknessPx < (expandedPx * Metrics.CardRevealRatio))
+        {
+            return;
+        }
+
+        var slots = EdgeLayout.Compose(Edge, client, Dpi, items, TextStyle, _scrollPx);
+
+        // 诊断：把卡片的确切矩形打一次（每实例一次）。自动化和人工排查都需要它——
+        // 之前靠 CardPadding/CardHeight 手算坐标，结果点到了透明像素上，点击直接穿透。
+        if (!_diagSlotLogged)
+        {
+            _diagSlotLogged = true;
+            foreach (var slot in slots)
+            {
+                DragDiag("Slot edge=" + Edge + " idx=" + slot.Index + " bounds=" + slot.Bounds
+                         + " client=" + client + " scroll=" + _scrollPx);
+            }
+        }
+
+        // 诊断：只在厚度变化时记一行，用来对齐「用户看到频闪的那一刻」与当时真实几何。
+        if (_thicknessPx != _diagLastPaintThickness)
+        {
+            _diagLastPaintThickness = _thicknessPx;
+            DragDiag("Paint edge=" + Edge + " thick=" + _thicknessPx + " client=" + client.Width + "x" + client.Height
+                + " state=" + _state + " items=" + items.Count + " hover=" + _hoverIndex
+                + " opaque=" + _dropOpaque + " dropTarget=" + _dropTarget + " magnet=" + _magnetHighlight);
+        }
+
         foreach (var slot in slots)
         {
             if (slot.Index < 0 || slot.Index >= items.Count)
@@ -413,7 +605,8 @@ public sealed class LeashForm : Form
                 continue;
             }
 
-            CardRenderer.Draw(g, slot.Bounds, items[slot.Index], Dpi, slot.Index == _hoverIndex, _thumbnails, _paths);
+            CardRenderer.Draw(g, slot.Bounds, items[slot.Index], Dpi, slot.Index == _hoverIndex, _thumbnails, _paths,
+                _settings.TextFontSize, dropHighlighted: _dropTarget || _magnetHighlight);
         }
 
         DrawInsertIndicator(g, client);
@@ -433,7 +626,7 @@ public sealed class LeashForm : Form
             return;
         }
 
-        var slots = EdgeLayout.Compose(Edge, client, Dpi, items.Count, _scrollPx);
+        var slots = EdgeLayout.Compose(Edge, client, Dpi, items, TextStyle, _scrollPx);
         var horizontal = EdgeLayout.IsHorizontal(Edge);
 
         int pos;
@@ -479,6 +672,14 @@ public sealed class LeashForm : Form
         }
 
         if (!shouldDraw)
+        {
+            return;
+        }
+
+        // 有卡片时不再铺满整窗：拖入高亮改由每张卡自己画（CardRenderer.DropHighlighted），
+        // 卡片之间的缝保持透明——这样看起来才是「一张张独立的卡」而不是一整条面板。
+        // 空边仍然铺满，否则用户看不出这条边可以放东西。
+        if (_store.ForEdge(Edge).Count > 0)
         {
             return;
         }
@@ -614,6 +815,24 @@ public sealed class LeashForm : Form
             return;
         }
 
+        // 零延迟拖出：光标一离开本窗口就交给系统拖放。
+        //
+        // 不依赖 OnMouseLeave —— 实测拖拽期间它根本不触发：日志里 25 次 MouseLeave
+        // 全部是 pressed=-1（普通移出窗口），拖拽中一次都没有，所以那个交接从来没跑过。
+        // 这里用已经每 40ms 跑一次的轮询判断窗口矩形，最坏多等 40ms，
+        // 比原来 PollDrag 末尾的 400ms 兜底快一个数量级。
+        if (Metrics.ZeroLatencyDragOut && !Bounds.Contains(screenCursor))
+        {
+            var leaveIndex = _pressedIndex;
+            _internalDrag = false;
+            _insertIndex = -1;
+            SetDragTarget(null);
+            _pressedIndex = -1;
+            Invalidate();
+            StartDragOut(leaveIndex);
+            return;
+        }
+
         _internalDrag = true;
 
         if (IsOverAnyLeash(screenCursor, out var target))
@@ -627,14 +846,67 @@ public sealed class LeashForm : Form
             return;
         }
 
-        // 离开所有吸附区 → 交给系统拖出（拖到别的应用）。
+        // 光标离开所有吸附区（屏幕中部这片空白）。这里要区分两件事：
+        //
+        //   跨边移动：终点是另一条绳子 → 全程内部轮询（OLE 同进程命中不可靠，见下）；
+        //   拖出到外部应用：终点是别的程序的窗口 → 必须交给 OLE（跨进程是可靠的，
+        //     实测 DoDragDrop 返回 Copy，通达信能接住）。
+        //
+        // 判据不用修饰键，也不用「离开绳子就算」——跨边拖拽必然经过这片空白。
+        // 用「光标停在**别的程序**的窗口上、且没在移动」：跨边是一口气划过去，
+        // 拖出时用户会对准目标停住。移动超过 3px 就重置计时，慢速划过也不会误判。
+        //
+        // 实测依据（2026-11-15 22:16–22:17，四次）：从这里直接调 DoDragDrop 时，
+        // 返回值是 Copy 说明会话启动、也确实有目标接住，但本进程四条绳子一条
+        // DragEnter 都收不到（目标边撑到 90dip + 不透明、源窗口也不透明，全试过）。
+        // 所以「拖到别的绳子」绝不能走 OLE，而「拖到别的程序」只能走 OLE。
+        var movedNow = Math.Abs(screenCursor.X - _lastPollCursor.X) > Metrics.DragIdleJitterPx
+                       || Math.Abs(screenCursor.Y - _lastPollCursor.Y) > Metrics.DragIdleJitterPx;
+        _lastPollCursor = screenCursor;
+
+        if (!IsForeignWindowUnderCursor(screenCursor))
+        {
+            _outsideIdleMs = 0;
+            return;
+        }
+
+        if (movedNow)
+        {
+            _outsideIdleMs = 0;
+            return;
+        }
+
+        _outsideIdleMs += Metrics.CursorProbeIntervalMs;
+        if (_outsideIdleMs < Metrics.DragOutGraceMs)
+        {
+            return;
+        }
+
+        // 停在外部窗口上够久了：判定为「拖出来」，交给 OLE。
         var index = _pressedIndex;
         _internalDrag = false;
         _insertIndex = -1;
+        _outsideIdleMs = 0;
         SetDragTarget(null);
         _pressedIndex = -1;
         Invalidate();
         StartDragOut(index);
+    }
+
+    /// <summary>
+    /// 光标下方是不是**别的程序**的窗口（桌面、任务栏也算别的程序）。
+    /// 用来把「拖到自家另一条绳子」和「拖到外部应用」分开，不需要任何修饰键。
+    /// </summary>
+    private static bool IsForeignWindowUnderCursor(Point screenPoint)
+    {
+        var hwnd = WindowFromPoint(screenPoint);
+        if (hwnd == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        GetWindowThreadProcessId(hwnd, out var pid);
+        return pid != 0 && pid != (uint)Environment.ProcessId;
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -708,7 +980,15 @@ public sealed class LeashForm : Form
     {
         base.OnMouseCaptureChanged(e);
 
-        if (!Capture && _internalDrag)
+        // 只有「左键已经松开」才清拖拽状态——那才是这次拖拽真的被打断了
+        // （Alt+Tab、Esc、别的窗口抢捕获）。清理本身是必须的：
+        // 残留的 _magnetHighlight 会让 DrawSurface 每帧填满窗口，收起态就是一条实色残留
+        // （LeashDragCleanupTests 守着这条）。
+        //
+        // 但**鼠标只是移出窗口时左键仍按着**，这里绝不能清：清掉 _pressedIndex 会让
+        // OnMouseLeave 里「离开绳子就交给 OLE」直接早退（日志实测 TryHandOff 一条都没有），
+        // 同时 PollDrag 的磁铁吸附也失去起点。
+        if (!Capture && _internalDrag && (Control.MouseButtons & MouseButtons.Left) == 0)
         {
             _internalDrag = false;
             _insertIndex = -1;
@@ -726,9 +1006,23 @@ public sealed class LeashForm : Form
     /// 改成「到边的距离 ≤ DragApproachZone」后，光标只要靠近屏幕边缘就算吸附，
     /// 这正是"磁铁"的语义。</para>
     /// </summary>
-    private static bool IsOverAnyLeash(Point screenPoint, out LeashForm? target)
+    private bool IsOverAnyLeash(Point screenPoint, out LeashForm? target)
     {
         target = null;
+
+        // 迟滞：已经吸附的边，只要光标还在它的感应区内就继续保持，不重新比距离。
+        //
+        // 为什么必须这么做：四条边复用同一个 IsCursorInTriggerZone 判据，
+        // Left 只看 X、Top 只看 Y，两条判据互不排斥——屏幕左上角会让两条边**同时**满足条件，
+        // 距离值只差几个像素。光标轻微抖动就会让「最近的一条」在两者之间来回翻转，
+        // 表现为两条边的磁铁高亮反复点亮又熄灭，也就是用户反馈的「弹好几下线、闪得太明显」。
+        // 右下角（Right + Bottom）同理。
+        if (_dragTargetForm is not null && IsInMagnetZone(_dragTargetForm, screenPoint))
+        {
+            target = _dragTargetForm;
+            return true;
+        }
+
         var best = int.MaxValue;
 
         foreach (Form form in Application.OpenForms)
@@ -761,6 +1055,18 @@ public sealed class LeashForm : Form
         }
 
         return target is not null;
+    }
+
+    /// <summary>光标是否仍落在该绳子的磁铁感应区内（含沿边范围判定）。</summary>
+    private static bool IsInMagnetZone(LeashForm leash, Point screenPoint)
+    {
+        if (!leash.Visible)
+        {
+            return false;
+        }
+
+        var zone = Metrics.Px(Metrics.MagnetSnapZone, leash.Dpi);
+        return EdgeGeometry.IsCursorInTriggerZone(leash.Edge, leash.WorkingArea, screenPoint, zone);
     }
 
     /// <summary>
@@ -801,7 +1107,7 @@ public sealed class LeashForm : Form
             return 0;
         }
 
-        var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items.Count, _scrollPx);
+        var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items, TextStyle, _scrollPx);
         return EdgeLayout.ComputeInsertIndex(slots, clientPoint, EdgeLayout.IsHorizontal(Edge));
     }
 
@@ -837,6 +1143,64 @@ public sealed class LeashForm : Form
             SchedulePreview(-1);
             Invalidate();
         }
+
+        // 鼠标离开窗口 = 卡片被拖出绳子。
+        //
+        // 这里**暂不**直接交给 OLE：从鼠标消息上下文发起系统拖放时，
+        // 同进程的其他绳子是否还能被识别为落点，尚未验证（自动化的点击坐标有偏差，
+        // 几次都没真点中卡片，测得不可靠）。而交接一旦发生，跨绳就会依赖那个未知项，
+        // 等于把已验证可用的跨绳押上去。
+        //
+        // 现在的行为：跨绳走内部吸附（已验证），拖出走 PollDrag 里「停在外部窗口上
+        // 超过 DragOutGraceMs」的兜底（同样已验证）。等手动拖一次确认 OLE 能认出目标绳，
+        // 再把这里换成零延迟交接——那时"以绳子宽度为锚点"就能完全按用户设想工作。
+        if (Metrics.ZeroLatencyDragOut)
+        {
+            DragDiag("MouseLeave edge=" + Edge + " pressed=" + _pressedIndex
+                     + " internal=" + _internalDrag + " dragging=" + _dragging);
+            TryHandOffToOle();
+        }
+    }
+
+    /// <summary>
+    /// 把正在进行的内部拖拽交给系统拖放。只在「确实拖着卡片」时生效，
+    /// 且 <c>_dragging</c> 已经为真时不再重入。
+    /// </summary>
+    private void TryHandOffToOle()
+    {
+        if (_dragging || _pressedIndex < 0)
+        {
+            return;
+        }
+
+        // 不能要求 _internalDrag：OnMouseLeave 通常比 PollDrag（40ms 轮询）先到，
+        // 那时标志还没置位，交接就永远不会发生。用系统拖拽阈值判断「真的在拖」，
+        // 单击后随手移开不会误触发。
+        var client = PointToClient(Cursor.Position);
+        var dragSize = SystemInformation.DragSize;
+        var moved = Math.Abs(client.X - _pressPoint.X) > dragSize.Width
+                    || Math.Abs(client.Y - _pressPoint.Y) > dragSize.Height;
+        DragDiag("TryHandOff 检查 edge=" + Edge + " pressed=" + _pressedIndex
+                 + " moved=" + moved + " internal=" + _internalDrag);
+        if (!moved)
+        {
+            return;
+        }
+
+        var items = _store.ForEdge(Edge);
+        if (_pressedIndex >= items.Count)
+        {
+            _pressedIndex = -1;
+            return;
+        }
+
+        var index = _pressedIndex;
+        _internalDrag = false;
+        _insertIndex = -1;
+        SetDragTarget(null);
+        _pressedIndex = -1;
+        Invalidate();
+        StartDragOut(index);
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)
@@ -851,7 +1215,7 @@ public sealed class LeashForm : Form
 
         var step = Metrics.Px(Metrics.ScrollStep, Dpi);
         var direction = e.Delta > 0 ? -1 : 1;
-        _scrollPx = EdgeLayout.ClampScroll(Edge, ClientRectangle, Dpi, items.Count, _scrollPx + (direction * step));
+        _scrollPx = EdgeLayout.ClampScroll(Edge, ClientRectangle, Dpi, items, TextStyle, _scrollPx + (direction * step));
         Invalidate();
 
         // 滚动后卡片位移，悬停的可能是另一张：预览已显示时立即切到新卡片（“不断弹出”），
@@ -889,7 +1253,7 @@ public sealed class LeashForm : Form
             return -1;
         }
 
-        var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items.Count, _scrollPx);
+        var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items, TextStyle, _scrollPx);
         return EdgeLayout.HitTest(slots, location);
     }
 
@@ -1016,7 +1380,7 @@ public sealed class LeashForm : Form
             return;
         }
 
-        var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items.Count, _scrollPx);
+        var slots = EdgeLayout.Compose(Edge, ClientRectangle, Dpi, items, TextStyle, _scrollPx);
         if (index >= slots.Count)
         {
             PreviewHost.Hide();
@@ -1115,9 +1479,37 @@ public sealed class LeashForm : Form
         _dragging = true;
         SetState(LeashVisualState.Dragging);
 
+        // 关键：DoDragDrop 是**同步模态循环**，一启动就阻塞调用它的那段代码，
+        // 所以「拖拽期间四边不透明」必须在进入 OLE **之前**完成。
+        //
+        // 2026-11-15 探针（.rivet/scratch/probe-crossdrag）三组对照实证：
+        // 目标窗保持 TransparencyKey 时收到 0 个 DragEnter；拖放前、以及拖放进行中
+        // 切成不透明，DragEnter/DragDrop 全部命中。唯一变量就是透明键——
+        // 它抠掉的像素连 OLE 命中一起穿透，与「是否同进程」无关。
+        //
+        // 只给**光标附近**的那条边取消透明。四条边全设就是用户看到的"四周一圈黑框"。
+        // 之后靠 LeashHost.OnTick 每 40ms 按光标位置动态切换——拖到哪条边，哪条才亮。
+        foreach (Form open in Application.OpenForms)
+        {
+            if (open is LeashForm leash
+                && !ReferenceEquals(leash, this)
+                && leash.IsCursorNearEdge(Cursor.Position))
+            {
+                leash.SetDropOpaque(true);
+            }
+        }
+
+        // 源窗口也必须不透明。实测（2026-11-15 22:17）：只把目标边撑到 113px 且不透明时，
+        // OLE 仍然一条 DragEnter 都不投递，DoDragDrop 返回 Copy 说明落点被别的进程窗口接走。
+        // 源窗口是 TransparencyKey 窗口时，整个拖放会话的可命中区域判定会失效。
+        SetDropOpaque(true);
+
         try
         {
-            DragOut.Start(this, item, _paths, _thumbnails, _settings);
+            // 记录 DoDragDrop 的返回值：None 说明 OLE 拖放**根本没启动**（源窗口透明、
+            // 鼠标键状态、或在非鼠标消息上下文调用都可能），而不是「启动了但目标没命中」。
+            var effect = DragOut.Start(this, item, _paths, _thumbnails, _settings);
+            DragDiag("StartDragOut 结束 effect=" + effect);
         }
         catch (Exception ex) when (ex is InvalidOperationException || ex is System.Runtime.InteropServices.ExternalException)
         {
@@ -1128,6 +1520,17 @@ public sealed class LeashForm : Form
             _dragging = false;
             _pressedIndex = -1;
             SetState(LeashVisualState.Idle);
+
+            // 接收期结束：把其他绳子的「撑宽 + 不透明」收回去。
+            // 不等 OnTick 兜底——DoDragDrop 期间消息循环是否泵、泵多少帧都不该决定观感。
+            foreach (Form open in Application.OpenForms)
+            {
+                if (open is LeashForm leash && !ReferenceEquals(leash, this))
+                {
+                    leash.SetDropReceive(false);
+                }
+            }
+
             _ = _store.TouchAsync(item.Id);
             Invalidate();
         }
@@ -1141,7 +1544,7 @@ public sealed class LeashForm : Form
         // 枚举格式可能抛（某些数据源在拖放早期不可用），不能因此影响拖入本身。
         try
         {
-            DragDiag("DragEnter isDragging=" + DragOut.IsDragging
+            DragDiag("DragEnter isDragging=" + DragOut.IsDragging + " edge=" + Edge
                 + " hasFileDrop=" + (drgevent.Data?.GetDataPresent(DataFormats.FileDrop) == true)
                 + " effect=" + DragIn.EffectsFor(drgevent.Data)
                 + " formats=[" + string.Join("|", drgevent.Data?.GetFormats() ?? Array.Empty<string>()) + "]");
@@ -1157,10 +1560,11 @@ public sealed class LeashForm : Form
 
         if (DragOut.IsDragging)
         {
-            // 自己的卡片跨边拖动：必须立即展开，否则落不进去。
+            // 自己的卡片跨边拖动：只置落点标记，**不展开**。
+            // 展开会让不透明的窗口变成一大块黑框（用户反馈“黑框很宽”）；
+            // 保持收起厚度就是一条细带，OLE 照样能命中、松手照样走 MoveAsync。
             _dropTarget = true;
             SchedulePreview(-1);
-            SetState(LeashVisualState.Dragging);
             Invalidate();
             return;
         }
@@ -1205,7 +1609,7 @@ public sealed class LeashForm : Form
         // 「拖进去过一次之后整条绳子怎么碰都不展开」（用户反馈）。
         _dropHighlight = false;
 
-        DragDiag("DragDrop isDragging=" + DragOut.IsDragging
+        DragDiag("DragDrop isDragging=" + DragOut.IsDragging + " edge=" + Edge
             + " hasFileDrop=" + (drgevent.Data?.GetDataPresent(DataFormats.FileDrop) == true));
 
         // 自己拖出的卡片落到绳子上 = **移动**：拖到对侧就换边，拖回原边则无操作。

@@ -21,6 +21,7 @@ public static class CardRenderer
     /// <param name="hovered">是否悬停高亮。</param>
     /// <param name="thumbnails">缩略图缓存（图片卡片用）。</param>
     /// <param name="paths">数据目录（解析缩略图文件名）。</param>
+    /// <param name="textFontSize">文字卡字号（DIP）；省略时用标称字号。
     public static void Draw(
         Graphics g,
         Rectangle bounds,
@@ -28,7 +29,9 @@ public static class CardRenderer
         int dpi,
         bool hovered,
         Thumbnailer? thumbnails,
-        AppPaths paths)
+        AppPaths paths,
+        int textFontSize = Metrics.FontSizeBaseline,
+        bool dropHighlighted = false)
     {
         if (g is null || item is null || bounds.Width <= 0 || bounds.Height <= 0)
         {
@@ -45,14 +48,21 @@ public static class CardRenderer
             int radius = Metrics.Px(Metrics.CardRadius, dpi);
             using var path = RoundedRect(bounds, radius);
 
-            using (var fill = new SolidBrush(hovered ? Theme.CardHover : Theme.CardBack))
+            // 底色优先级：拖入落点（深蓝）> 鼠标悬停（灰蓝）> 常态（深灰）。
+            // 拖入高亮改到每张卡自己身上，而不是铺满整个面板——
+            // 这样卡片之间的缝保持透明，看起来才是「一张张独立的卡」。
+            var fillColor = dropHighlighted
+                ? Theme.SurfaceHover
+                : (hovered ? Theme.CardHover : Theme.CardBack);
+            using (var fill = new SolidBrush(fillColor))
             {
                 g.FillPath(fill, path);
             }
 
-            using (var border = new Pen(
-                       hovered ? Theme.CardBorderActive : Theme.CardBorder,
-                       Metrics.PxFloat(Metrics.StrokeWidth, dpi)))
+            var borderColor = dropHighlighted
+                ? Theme.DropHighlight
+                : (hovered ? Theme.CardBorderActive : Theme.CardBorder);
+            using (var border = new Pen(borderColor, Metrics.PxFloat(Metrics.StrokeWidth, dpi)))
             {
                 g.DrawPath(border, path);
             }
@@ -70,10 +80,10 @@ public static class CardRenderer
                     DrawImageCard(g, inner, item, dpi, thumbnails, paths);
                     break;
                 case Kind.Text:
-                    DrawTextCard(g, inner, item, dpi);
+                    DrawTextCard(g, inner, item, dpi, textFontSize);
                     break;
                 default:
-                    DrawFileCard(g, inner, item, dpi);
+                    DrawFileCard(g, inner, item, dpi, textFontSize);
                     break;
             }
         }
@@ -119,7 +129,7 @@ public static class CardRenderer
         g.DrawRectangle(pen, inner);
     }
 
-    private static void DrawTextCard(Graphics g, Rectangle inner, Item item, int dpi)
+    private static void DrawTextCard(Graphics g, Rectangle inner, Item item, int dpi, int textFontSize)
     {
         var text = (item.Text ?? string.Empty).Trim();
         if (text.Length == 0)
@@ -127,7 +137,8 @@ public static class CardRenderer
             return;
         }
 
-        using var font = new Font(Theme.UiFontFamily, Metrics.PxFloat(Metrics.FontSize, dpi), FontStyle.Regular, GraphicsUnit.Pixel);
+        var fontSizeDip = Math.Clamp(textFontSize, Metrics.TextFontSizeMin, Metrics.TextFontSizeMax);
+        using var font = new Font(Theme.UiFontFamily, Metrics.PxFloat(fontSizeDip, dpi), FontStyle.Regular, GraphicsUnit.Pixel);
         using var brush = new SolidBrush(Theme.TextPrimary);
         using var format = new StringFormat
         {
@@ -144,20 +155,26 @@ public static class CardRenderer
         g.DrawString(text, font, brush, area, format);
     }
 
-    private static void DrawFileCard(Graphics g, Rectangle inner, Item item, int dpi)
+    private static void DrawFileCard(Graphics g, Rectangle inner, Item item, int dpi, int textFontSize)
     {
         var fileName = item.DisplayName ?? Path.GetFileName(item.BlobName ?? string.Empty);
         var extension = Path.GetExtension(fileName);
         var displayName = string.IsNullOrEmpty(fileName) ? "文件" : fileName;
 
-        using var extensionFont = new Font(Theme.MonoFontFamily, Metrics.PxFloat(Metrics.FontSizeTitle, dpi), FontStyle.Bold, GraphicsUnit.Pixel);
-        using var nameFont = new Font(Theme.UiFontFamily, Metrics.PxFloat(Metrics.FontSize, dpi), FontStyle.Regular, GraphicsUnit.Pixel);
+        var fontSizeDip = Math.Clamp(textFontSize, Metrics.TextFontSizeMin, Metrics.TextFontSizeMax);
+        // 扩展名徽标比文件名小一号（保持层级），但不低于字号下限。
+        var badgeSizeDip = Math.Max(Metrics.TextFontSizeMin, fontSizeDip - Metrics.FileBadgeSizeDelta);
+
+        using var extensionFont = new Font(Theme.MonoFontFamily, Metrics.PxFloat(badgeSizeDip, dpi), FontStyle.Bold, GraphicsUnit.Pixel);
+        using var nameFont = new Font(Theme.UiFontFamily, Metrics.PxFloat(fontSizeDip, dpi), FontStyle.Regular, GraphicsUnit.Pixel);
         using var extensionBrush = new SolidBrush(Theme.TextSecondary);
         using var nameBrush = new SolidBrush(Theme.TextPrimary);
         using var format = new StringFormat
         {
             Trimming = StringTrimming.EllipsisPath,
-            FormatFlags = StringFormatFlags.NoWrap,
+            // 允许换行：长文件名按卡片宽度折行；超出可用高度时按 EllipsisPath 截断（保留末尾扩展名）。
+            // 原来用 NoWrap 会把长名字直接省略成一行（用户反馈「字号大了但还是不换行」）。
+            FormatFlags = StringFormatFlags.LineLimit,
         };
 
         var badge = string.IsNullOrEmpty(extension) ? "FILE" : extension.TrimStart('.').ToUpperInvariant();

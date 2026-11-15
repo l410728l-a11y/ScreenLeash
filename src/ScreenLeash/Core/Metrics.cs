@@ -48,9 +48,44 @@ public static class Metrics
     /// 与悬停用的 EdgeTriggerZone 分开命名，是为了以后调其中一个不会牵动另一个。</summary>
     public const int DragApproachZone = 40;
 
-    /// <summary>跨边互拖时的磁铁吸附半径：拖着自己的卡片靠近另一条绳，到这个距离内就算吸附目标。
-    /// 比 DragApproachZone 宽，因为拖卡片时希望更容易"够到"对侧。</summary>
+    /// <summary>跨边互拖时的磁铁吸附半径（DIP）。比 DragApproachZone 宽，因为拖卡片时希望更容易"够到"对侧。</summary>
     public const int MagnetSnapZone = 90;
+
+    /// <summary>
+    /// 拖出到外部应用的宽限（毫秒）：光标停在**别的程序**窗口上并保持不动这么久，
+    /// 才判定为「拖出来」并交给 OLE。
+    ///
+    /// <para>为什么不是按修饰键，也不是「离开绳子就算」：跨边拖拽必然经过屏幕中部那片空白，
+    /// 一离开就交出去会把卡片丢给路过的桌面/应用。用「停住」当判据，
+    /// 跨边时是一口气划过去（移动就重置计时），拖出时用户会对准目标停住。</para>
+    /// </summary>
+    public const int DragOutGraceMs = 400;
+
+    /// <summary>
+    /// 判定「光标停住」的抖动容忍（像素）：一帧内位移不超过这个值就算没在移动。
+    /// 拖出宽限计时只在「没在移动」时累加，避免慢速划过屏幕中部被误判成拖出来。
+    /// </summary>
+    public const int DragIdleJitterPx = 3;
+
+    /// <summary>
+    /// 鼠标一离开绳子就把卡片交给系统拖放（零延迟拖出）。
+    ///
+    /// <para><b>默认开启</b>：拖到微信/桌面/别的程序时和原来手感一致，一离开绳子就能看到
+    /// 系统的拖放指针。环境变量 <c>SCREENLEASH_ZERO_LATENCY_DRAGOUT=0</c> 可关掉，
+    /// 退回「跨绳内部吸附 + 停在外部窗口 DragOutGraceMs 才拖出」的保守版本。</para>
+    ///
+    /// <para><b>开启后的已知风险</b>：跨绳能否成立取决于「系统拖放是否认得本进程自己的
+    /// 另一条绳子」。跨进程（微信/桌面）是可靠的；同进程从定时器回调发起时实测四次都
+    /// 收不到 DragEnter，从鼠标消息上下文（这里）发起还没测出来。</para>
+    /// </summary>
+    public static readonly bool ZeroLatencyDragOut = !string.Equals(
+        Environment.GetEnvironmentVariable("SCREENLEASH_ZERO_LATENCY_DRAGOUT"),
+        "0",
+        StringComparison.Ordinal);
+
+    // 注：曾加过 DragOutGraceMs / DragOutDistance 两个「何时把卡片交给系统拖放」的判据，
+    // 2026-11-15 证实真因是「透明键把 OLE 拖放命中一起穿透」——目标边根本收不到 DragEnter。
+    // 修法在 LeashHost.OnTick：拖自己卡片时四条边强制不透明。判据本身不再需要，已移除。
 
     // ── 卡片 ─────────────────────────────────────────────────────
     /// <summary>卡片圆角半径（DIP）。</summary>
@@ -149,6 +184,43 @@ public static class Metrics
     /// <summary>正文字号（DIP）。用户反馈卡片里文字偏小，9.5 → 11。</summary>
     public const float FontSize = 11f;
 
+    /// <summary>字号基准（DIP）。行高按字号线性折算时的分母：
+    /// 行高 DIP = LineHeight × 字号 / FontSizeBaseline。</summary>
+    public const int FontSizeBaseline = 11;
+
+    /// <summary>文字卡字号下限（DIP）。</summary>
+    public const int TextFontSizeMin = 9;
+
+    /// <summary>文字卡字号上限（DIP）。</summary>
+    public const int TextFontSizeMax = 20;
+
+    /// <summary>文字卡显示行数下限。</summary>
+    public const int TextMaxLinesMin = 1;
+
+    /// <summary>文字卡显示行数上限（决定文字卡最大沿边长度）。</summary>
+    public const int TextMaxLinesMax = 12;
+
+    /// <summary>文字卡显示行数默认值（未设置时的初始上限）。</summary>
+    public const int TextMaxLinesDefault = 6;
+
+    /// <summary>文字卡垂直内边距合计（上下各一份，DIP）。文字卡高度 = 本值 + 行数 × 行高。</summary>
+    public const int TextCardVerticalPadding = CardPadding * 2;
+
+    /// <summary>文件卡扩展名徽标比正文字号小多少（DIP）。保持层级，但不低于字号下限。</summary>
+    public const int FileBadgeSizeDelta = 2;
+
+    /// <summary>
+    /// 卡片开始绘制的最小展开比例（0..1）。
+    ///
+    /// <para>取 0.35：收起 40dip / 展开 140dip ≈ 0.286，0.35 略高于它，
+    /// 等价于「展开动画一开始就参与」——卡片随面板块撑开而逐渐显形，这才是丝滑的来源。</para>
+    ///
+    /// <para>曾取 0.98：卡片只在最后 1-2 帧出现，等于「啪」地跳出，丝滑感全无（用户实测）。</para>
+    /// <para>注意：贴边黑线的成因尚未定位（与卡片压扁无关，已在固定宽度版本上复现），
+    /// 本值只负责动画观感，不承担那个问题。</para>
+    /// </summary>
+    public const float CardRevealRatio = 0.35f;
+
     /// <summary>辅助字号（DIP），文件名/次要信息用。</summary>
     public const float FontSizeSmall = 9f;
 
@@ -168,6 +240,19 @@ public static class Metrics
     // ── 交互与动画 ────────────────────────────────────────────────
     /// <summary>UI 线程唯一的显隐/缓动 timer 间隔（毫秒）。</summary>
     public const int AnimIntervalMs = 150;
+
+    // 说明：AnimIntervalMs 已无任何源码引用（Wave 0 实测 grep 只命中定义本身），
+    // 保留是为了不打无关 diff。下面三个常量是现行动画时钟的真实参数。
+
+    /// <summary>动画刷新间隔（毫秒）。16ms ≈ 60fps，只在过渡期运行；
+    /// 与光标探测（<see cref="CursorProbeIntervalMs"/>）解耦，空闲时不启动。</summary>
+    public const int AnimFrameIntervalMs = 16;
+
+    /// <summary>展开/收起总时长（毫秒）。原实现 5 帧 × 40ms = 200ms，这里取 180ms 略快。</summary>
+    public const int AnimDurationMs = 180;
+
+    /// <summary>ease-out 幂次：3 = 三次方收尾（前快后慢）。</summary>
+    public const int EasePower = 3;
 
     /// <summary>缓动除数：每 tick 移动距离 = max(MinEaseStep, |Δ| / EaseDivisor)。
     /// 2 比 3 收敛更快：134dip 的展开从约 8 帧降到 5 帧。</summary>

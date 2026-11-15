@@ -29,6 +29,7 @@ public sealed class LeashHost : IDisposable
     private readonly ScreenTopology _topology;
     private readonly List<LeashForm> _forms = new();
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly System.Windows.Forms.Timer _animTimer;
     private readonly PasteHook _pasteHook = new();
 
     private EdgeKind _activeEdge = EdgeKind.Right;
@@ -71,6 +72,11 @@ public sealed class LeashHost : IDisposable
         _timer = new System.Windows.Forms.Timer { Interval = Metrics.CursorProbeIntervalMs };
         _timer.Tick += OnTick;
         _timer.Start();
+
+        // 动画时钟：默认不启动，只在有窗口进入厚度过渡时由 OnTick 拉起，
+        // 全部到位后自己停表——空闲开销与改动前一致（仍然只有 40ms 探测时钟在跑）。
+        _animTimer = new System.Windows.Forms.Timer { Interval = Metrics.AnimFrameIntervalMs };
+        _animTimer.Tick += OnAnimTick;
 
         // 孤儿清理（blobs/thumbs 中无引用文件）放到后台，别拖慢启动。
         _ = InitializeStoreAsync();
@@ -405,17 +411,74 @@ public sealed class LeashHost : IDisposable
             // 展开成 140dip 后如果恢复透明，那 140dip 里除了细线全是透明像素，
             // OLE 会认为光标离开了窗口 → OnDragLeave → 收起 → 又不透明 → 再 DragEnter，
             // 表现为"可拖入区间闪一下就缩回去"（用户反馈）。
-            form.SetDropOpaque(DropOpaquePolicy.ShouldBeOpaque(
-                leftDown,
-                _pressMoved,
-                form.IsDropHighlighted,
-                form.IsDraggingCard,
-                form.Bounds.Contains(cursor)));
+            // 拖自己的卡片时：**接收方**强制不透明并撑到磁铁半径。
+            //
+            // 透明键抠掉的像素连 OLE 拖放命中也一起穿透（2026-11-15 探针三组对照实证），
+            // 所以接收方必须取消透明；同时窗口必须撑到 MagnetSnapZone，
+            // 否则用户停在离绳子 50dip 处时视觉上已经贴住、光标却在窗口外，收不到落点。
+            //
+            // 源窗口排除在外：它在拖拽期间展开到 140dip，整块变近黑会形成一大片黑框，
+            // 而那片黑框不接受落点（放回源边等于没移动）——
+            // 用户报告的「黑框的位置和真正能放下的位置不一致」就是这块多出来的黑框。
+            // 只有光标靠近的那条边才取消透明。
+            // 四条边全设会让整个屏幕四周同时出现黑框（用户反馈"四周都不要显示黑框"）；
+            // 靠近才设，视觉上只剩即将落上去的那一条亮一下。
+            var receiving = DragOut.IsDragging
+                            && !form.IsDraggingCard
+                            && form.IsCursorNearEdge(cursor);
+            form.SetDropOpaque(
+                receiving
+                || DropOpaquePolicy.ShouldBeOpaque(
+                    leftDown,
+                    _pressMoved,
+                    form.IsDropHighlighted,
+                    form.IsDraggingCard,
+                    form.Bounds.Contains(cursor),
+                    form.HasPressedCard));
+
+            // 接收方**不撑宽**：撑到 MagnetSnapZone(90dip) 会让拖自己卡片时的黑框
+            // 比「外部拖入」时的 40dip 宽一倍，两处宽度对不上（用户反馈）。
+            // 命中范围就按窗口实际厚度算。
+            form.SetDropReceive(false);
             form.Tick();
+
+            // 过渡刚开始：启动动画时钟（16ms）。它会在全部到位时自己停表。
+            if (form.IsTransitioning && !_animTimer.Enabled)
+            {
+                _animTimer.Start();
+            }
+
             if (form.IsExpanded)
             {
                 _activeEdge = form.Edge;
             }
+        }
+    }
+
+    /// <summary>
+    /// 动画时钟：只在有窗口处于过渡时运行，全部到位即停表。
+    /// 与探测时钟（<see cref="Metrics.CursorProbeIntervalMs"/>）分开，是为了让动画帧率
+    /// 不再被「光标探测 40ms」锁死（原实现 40→140dip 只有 5 帧，感知为台阶）。
+    /// </summary>
+    private void OnAnimTick(object? sender, EventArgs e)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        bool anyRunning = false;
+        foreach (var form in _forms)
+        {
+            if (form.AdvanceAnimation())
+            {
+                anyRunning = true;
+            }
+        }
+
+        if (!anyRunning)
+        {
+            _animTimer.Stop();
         }
     }
 
@@ -449,6 +512,10 @@ public sealed class LeashHost : IDisposable
         _timer.Stop();
         _timer.Tick -= OnTick;
         _timer.Dispose();
+
+        _animTimer.Stop();
+        _animTimer.Tick -= OnAnimTick;
+        _animTimer.Dispose();
 
         _topology.Rebuilt -= OnTopologyRebuilt;
         _topology.Dispose();

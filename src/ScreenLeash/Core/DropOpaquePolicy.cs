@@ -33,12 +33,19 @@ public static class DropOpaquePolicy
     /// <param name="dropHighlighted">外部东西正拖在本窗口上（已收到 DragEnter）。</param>
     /// <param name="draggingCard">本窗口正在拖自己的卡片（内部排序或拖出）。</param>
     /// <param name="cursorInsideWindow">光标是否落在本窗口矩形内（屏幕坐标）。</param>
+    /// <param name="pressOnOwnCard">
+    /// 本次按下落在本窗口的卡片上。拖动自己卡片的**启动瞬间** <paramref name="draggingCard"/>
+    /// 还是 false（PollDrag 尚未跑到），若不加这一条，源窗口会被当成「外部东西拖进来」，
+    /// 在展开成 140dip 的过程中整块变近黑——那就是用户看到的「拖出来还没松手前的一大片黑框」，
+    /// 宽度和外部拖入时的 40dip 细带完全不一致。
+    /// </param>
     public static bool ShouldBeOpaque(
         bool leftDown,
         bool movedWhilePressed,
         bool dropHighlighted,
         bool draggingCard,
-        bool cursorInsideWindow)
+        bool cursorInsideWindow,
+        bool pressOnOwnCard = false)
     {
         if (!leftDown)
         {
@@ -53,6 +60,12 @@ public static class DropOpaquePolicy
 
         // 拖自己的卡片（排序 / 拖出）：面板本身有卡片像素，再整块变黑只会挡住操作。
         if (draggingCard)
+        {
+            return false;
+        }
+
+        // 拖动自己卡片的启动瞬间：状态还没置位，但按下的确实是本窗口的卡片。
+        if (pressOnOwnCard)
         {
             return false;
         }
