@@ -40,6 +40,35 @@ export const DEFAULT_LIST_LIMIT = 50
 export const MAX_INBOX_PENDING = 200
 
 /**
+ * 收件箱「未被消费」判定阈值（秒）。
+ *
+ * 依据 ScreenLeash 自己的消费节奏：命令文件必须安静 SettleTime=2 秒才被处理
+ * （Core/InboxIngest.cs:61），挂件轮询周期约 1.5 秒 —— 正常 3.5 秒内必被移走，
+ * 这里给 3 倍余量。超过仍留在 inbox，说明消费端没有在工作。
+ *
+ * 边界：只证明「没人消费」，不能区分「进程不在」与「进程在但卡住」；
+ * 对用户而言两者等价（绳子都不会更新）。pending 为 0 时无法判断，不报。
+ */
+export const INBOX_STALL_SECONDS = 10
+
+/**
+ * ScreenLeash 本体下载地址。
+ *
+ * 工具失败文案、投递提示、turnStart 注入块三处都要给用户同一个地址，
+ * 各写一次必然漂移（审核实测过文案分叉），统一收敛到这个常量。
+ */
+export const BODY_DOWNLOAD_URL = 'https://github.com/l410728l-a11y/ScreenLeash/releases/latest'
+
+/**
+ * turnStart 注入块的根标签。
+ *
+ * 宿主校验规则（rivet-runtime chunk-Y36DRU67.js 的 promptContext.setBlock）：
+ * XML 根标签小写后必须以插件 id 归一化前缀（非 [A-Za-z0-9-] 换成 -）开头，
+ * 否则整块被丢弃、只留一条 debug 日志。故用 `leash-bridge-` 开头。
+ */
+export const STATUS_BLOCK_TAG = 'leash-bridge-status'
+
+/**
  * 默认数据根。Windows 上取 %LOCALAPPDATA%\ScreenLeash；
  * 非 Windows 或环境变量缺失时退回 <home>/AppData/Local/ScreenLeash（便于在测试里注入）。
  */
@@ -174,6 +203,85 @@ function describe(item) {
   }
 }
 
+/**
+ * 收件箱在途状态：只报可观测的事实，不做进程探测。
+ *
+ * 插件没有 shell 权限，本体也没留下 pid / 心跳文件，因此无法直接判断进程存活。
+ * 能做的是看收件箱有没有「一直没人取走」的命令 —— 这是消费端停摆的可观测后果。
+ *
+ * consumerState 三态：
+ *   idle               收件箱空 —— 没有在途证据，不能推断本体是否在跑
+ *   draining           有积压但都在阈值内 —— 消费端看起来在正常工作
+ *   stalled-or-absent  有命令超过 INBOX_STALL_SECONDS 没被移走 —— 消费端没在工作
+ *
+ * 只数 `.json`：`.tmp` 是写入方的中间态，`done/`、`bad/` 是子目录不进统计。
+ * 任何一次 fs 失败都不抛，退化成 idle。
+ */
+export function inspectInbox(root) {
+  const inbox = path.join(root, 'inbox')
+  let names
+  try {
+    names = fs.readdirSync(inbox).filter((n) => n.endsWith('.json'))
+  } catch {
+    return { pending: 0, oldestPendingAgeSeconds: null, consumerState: 'idle', reason: 'inbox-unreadable' }
+  }
+
+  if (names.length === 0) {
+    return { pending: 0, oldestPendingAgeSeconds: null, consumerState: 'idle' }
+  }
+
+  let oldestAge = 0
+  for (const name of names) {
+    try {
+      const age = (Date.now() - fs.statSync(path.join(inbox, name)).mtimeMs) / 1000
+      if (age > oldestAge) oldestAge = age
+    } catch {
+      /* 单个文件读不到不影响整体判定 */
+    }
+  }
+
+  return {
+    pending: names.length,
+    oldestPendingAgeSeconds: Number(oldestAge.toFixed(1)),
+    consumerState: oldestAge > INBOX_STALL_SECONDS ? 'stalled-or-absent' : 'draining',
+  }
+}
+
+/**
+ * 本体安装状态的**可判**部分：只回答「数据根在不在」。
+ *
+ * 存在只能说明装过/跑过，不能证明进程此刻在跑（本体没留 pid 或心跳，插件又没有 shell 权限）；
+ * 那类判断交给 inspectInbox 的积压信号，这里不猜。
+ */
+export function inspectBody(root = defaultLeashRoot()) {
+  let isDir = false
+  try {
+    isDir = fs.statSync(root).isDirectory()
+  } catch {
+    isDir = false
+  }
+  return { dataRoot: root, dataRootExists: isDir }
+}
+
+/**
+ * turnStart 注入块：数据根不存在时返回一段短提示，其余情况返回 null。
+ *
+ * 返回 null 是刻意的——正常状态一个字节都不注入，不占 token、不刷屏。
+ * 块内文本会进入对话上下文，所以只写用户要看的事实与动作，不写实现细节。
+ * 体积远低于宿主隔离通道 32KB 的上限（rivet-runtime 的 str(block, 0x20*0x400)）。
+ */
+export function buildBodyStatusBlock(status = inspectBody()) {
+  if (status.dataRootExists) return null
+  return (
+    `<${STATUS_BLOCK_TAG}>` +
+    `ScreenLeash 本体未检测到：数据目录 ${status.dataRoot} 不存在，所以卡片不会显示、投递的命令也不会落卡。` +
+    `若用户问起屏幕上的卡片/绳子，或问为什么没有出现，请直接说明需要先安装本体：${BODY_DOWNLOAD_URL} ` +
+    `（win-x64 目录版，解压后双击 ScreenLeash.exe，不需要装 .NET；启动后它会自己建这个目录）。` +
+    `装好后它默认只在屏幕最右侧显示一条细线（鼠标贴到右边缘才展开），左/上/下三条边默认关闭，需要在它的设置里手动开启。` +
+    `</${STATUS_BLOCK_TAG}>`
+  )
+}
+
 /** leash_info 的实际内容：不打游戏，只报事实。 */
 export function infoLeash(root = defaultLeashRoot()) {
   const doc = readDocument(root)
@@ -216,7 +324,21 @@ export function infoLeash(root = defaultLeashRoot()) {
       byEdge,
       blobBytes,
     },
-    note: '只读视图。ScreenLeash 是卡片集合的唯一拥有者，本插件不会写 items.json。',
+    // 收件箱在途状态：pending=0 时无法判断本体是否在跑，只能报 idle；
+    // 有超过阈值的积压则可判定消费端没在工作（进程不在或卡住）。
+    inbox: inspectInbox(root),
+    // 边可见性：本体默认只开右侧，其余三条边默认关闭（AppSettings.cs:37 与 :32/:35/:40）。
+    // 插件**不**解析本体 settings.json：文件缺失即全默认，且本体加载时会按 Version 迁移改写取值，
+    // 外部照文件读会得出与本体实际行为不同的结论。所以只给「默认值」这一条稳定事实。
+    edgeVisibility: {
+      defaultEnabled: ['right'],
+      note:
+        '本体默认只开屏幕右侧一条边（left/top/bottom 默认关闭，需在 ScreenLeash 设置里手动开启）。' +
+        '看不到绳子时先确认右侧边已开启；本插件不解析本体的 settings.json，无法报告你自己的开关状态。',
+    },
+    note:
+      '只读视图。ScreenLeash 是卡片集合的唯一拥有者，本插件不会写 items.json。' +
+      'inbox.consumerState=stalled-or-absent 表示收件箱里有超时未被消费的命令，通常意味着本体未运行。',
   }
 }
 
@@ -411,10 +533,18 @@ export function putLeashItem(root = defaultLeashRoot(), args = {}) {
   const submitted = submitToInbox(root, { items: [item] })
   if (!submitted.ok) return submitted
 
+  // 投递后立刻看一眼收件箱：如果里面已经躺着超时未消费的旧命令，说明挂件没在工作，
+  // 不能再承诺「1.5 秒后落卡」。刚写进去的这条 age≈0，不会把自己判成积压。
+  const inbox = inspectInbox(root)
+  const stalled = inbox.consumerState === 'stalled-or-absent'
+
   return {
     ...submitted,
     item,
-    note: '已投递到收件箱；挂件进程轮询（约 1.5 秒）后落卡。插件没有改 items.json。',
+    inbox,
+    note: stalled
+      ? `已投递到收件箱，但收件箱里已有 ${inbox.pending} 条超过 ${INBOX_STALL_SECONDS} 秒未被处理的命令——ScreenLeash 可能未运行。已安装就直接启动 ScreenLeash.exe；没装过从 ${BODY_DOWNLOAD_URL} 取 win-x64 目录版，解压后双击即可（不需要装 .NET）。`
+      : '已投递到收件箱；ScreenLeash 运行中时约 1.5 秒后落卡。若长时间不落卡，通常是本体未运行（用 leash_info 看 inbox.consumerState）。插件没有改 items.json。',
   }
 }
 
@@ -602,7 +732,10 @@ export function createTools(dataRoot) {
                 ok: false,
                 reason: 'not-installed',
                 dataRoot: target,
-                message: '未检测到 ScreenLeash 数据目录，请先安装并运行一次 ScreenLeash。',
+                message:
+                  '未检测到 ScreenLeash 数据目录：要么没装本体，要么装了但从未运行过。' +
+                  `没装过：${BODY_DOWNLOAD_URL} 取 win-x64 目录版，解压后双击 ScreenLeash.exe（不需要装 .NET）。` +
+                  '装过的：直接启动它即可，启动后它会自己建这个目录。',
               },
               null,
               2

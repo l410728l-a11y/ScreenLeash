@@ -23,7 +23,7 @@
 
 | 工具 | 作用 | 审批 |
 |---|---|---|
-| `leash_info` | 数据目录、卡片总数、各边分布、`items.json` 最后写入时间 | 否 |
+| `leash_info` | 数据目录、卡片总数、各边分布、`items.json` 最后写入时间、收件箱在途状态（`inbox.consumerState`） | 否 |
 | `leash_list` | 卡片列表（文本预览 / 文件名），可按 `edge`、`kind` 筛选，`limit` 默认 50 | 否 |
 | `leash_read` | 单张卡完整内容：文本卡返回原文；图片/文件卡返回 blob 绝对路径 | 否 |
 | `leash_put` | 挂一条文本或本地文件（`path` 是顶层参数，走宿主路径守卫） | 否 |
@@ -86,8 +86,8 @@ ScreenLeash 的 `ItemStore` 是卡片集合的**唯一拥有者**：内存持有
 插件侧：
 
 ```bash
-node --test ./test/impl.test.mjs ./test/index.test.mjs   # 32 tests
-node tools/check-manifest.mjs                             # 清单校验
+node --test ./test/*.test.mjs   # 67 tests
+node tools/check-manifest.mjs   # 清单校验
 ```
 
 挂件侧（新增 `tests\ScreenLeash.Tests\InboxIngestTests.cs`，23 条）：
@@ -106,6 +106,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 test
 - `leash_read` 前缀匹配、歧义不猜、图片卡返回 blob 绝对路径、blob 缺失标记
 - 只读工具调用前后 `items.json` 字节不变
 - `leash_put` 写 `.tmp` → rename 不留残留；数据目录不存在时拒绝且不造目录；六种非法参数逐项拒绝；连续两次不覆盖
+- `inbox.consumerState` 三态判定（空 / 在途 / 停摆）：只数 inbox 顶层 `.json`，`.tmp` 与 `done/` 不计；`leash_put` 的文案随积压状态切换，停摆时不再承诺 1.5 秒落卡
+- `turnStart` 注入：仅在数据目录不存在时注入一次（同会话不重复）、块根标签以插件 id 前缀开头（宿主校验规则）、体积上限、`setBlock` 抛错不外抛、宿主未提供 `promptContext` 时静默返回
 
 挂件侧覆盖点：线格式解析（大小写不敏感、缺 edge 回退、坏 JSON、空 items、超条数截断）、
 `.tmp` 不处理、安静期生效、坏文件进 `bad\`、成功归档进 `done\`、缺失源文件计 skipped、
@@ -115,11 +117,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 test
 
 **前置条件：本机需先安装 ScreenLeash 本体。**
 
-下载：[ScreenLeash Releases](https://github.com/l410728l-a11y/ScreenLeash/releases/latest) → 下载 `ScreenLeash-0.1.0-alpha-win-x64.zip` → 解压 → 双击 `ScreenLeash.exe`（不需要安装 .NET）。
+下载：[ScreenLeash Releases](https://github.com/l410728l-a11y/ScreenLeash/releases/latest) → 取最新的 `ScreenLeash-*-win-x64.zip` → 解压 → 双击 `ScreenLeash.exe`（不需要安装 .NET）。
+
+> 不写死版本号：本体发行产物名随版本变（源码里 `ScreenLeash.csproj` 与服务端 Release 的编号不一定相同），写死必过时。以 Releases 页当次最新的 `win-x64` 目录版为准。
 
 插件不包含本体，也代替不了它：天枢插件跑在宿主进程里，画不出桌面窗口，那根绳子必须由 ScreenLeash 自己画。没装本体时插件不会报错，所有工具都会返回"未检测到数据目录"，且不创建任何文件。
 
-桌面端：把整个目录复制到 `D:\sky\tianshu\Tianshu\TianshuData\.rivet\plugins\leash-bridge\`，
+从 0.5.2 起还有一条被动提示：插件声明了 `promptContext` 能力与 `turnStart` 生命周期，**每个会话的首轮对话**会检查一次数据目录；目录不存在时，向这一轮注入一段短文本（本机路径 + 下载地址），同一会话最多注入一次，目录正常时一个字节都不注入。所以装完插件、重启天枢、随便说一句话，就能在回答里看到「要先装本体」，不必先猜到说什么话才会触发工具。
+
+**本体在跑但看不到绳子**：本体默认只在屏幕最右侧显示一条细线（实际线宽 2.5dip，其余像素透明），鼠标贴到屏幕右边缘 40dip 内才展开；左/上/下三条边默认关闭，要自己在本体设置里开。插件不解析本体的 `settings.json`——该文件不存在即全默认，且本体加载时会按 `Version` 迁移改写取值，外部照着文件读会得出与本体实际行为不同的结论，所以这类判断只能看本体自己的设置界面。
+
+**装了本体但没启动时**是另一种静默：只读工具仍能读到历史卡片，但 `leash_put` 投递的命令会一直躺在 `inbox\` 里没人消费。用 `leash_info` 的 `inbox.consumerState` 自查：
+
+| 值 | 含义 |
+|---|---|
+| `idle` | 收件箱空，无从判断本体是否在跑（不是「在跑」的证据） |
+| `draining` | 有在途命令但都未超时，消费端看起来正常 |
+| `stalled-or-absent` | 有命令超过 10 秒没被取走——本体没在跑，或进程在但卡住了 |
+
+判据只用「收件箱里的 `.json` 有多久没被移走」这一条可观测事实，不做进程探测（插件没有 shell 权限，本体也没留下 pid 文件）。所以它能否定「在跑」，不能肯定「在跑」。
+
+桌面端：把整个目录复制到「天枢数据目录」下的 `.rivet\plugins\leash-bridge\`（该目录由启动器配置的 `rivetHome` 决定，形如 `<rivetHome>\TianshuData\.rivet\plugins\leash-bridge\`），
 托盘右键退出后重新打开（关窗口只是最小化，不会重新扫描）。
 
 注意：新插件会改变会话的工具表，宿主重启后旧会话可能因连续性校验（工具表哈希不一致）无法续接 —— 这不是插件的问题，是宿主的前缀缓存机制。重启前先收尾手头工作。

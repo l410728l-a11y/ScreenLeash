@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { defineTianshuPlugin } from './tpi.js'
-import { createTools } from './impl.js'
+import { createTools, inspectBody, buildBodyStatusBlock } from './impl.js'
 
 /**
  * 运行时描述一律以清单为准。
@@ -67,8 +67,36 @@ export default defineTianshuPlugin({
   id: 'leash-bridge',
   activate(host) {
     host.log?.debug?.(`leash-bridge 已激活 · TPI ${host.tpiVersion ?? '未知'}`)
+
+    // 每会话最多注入一次：状态块进了对话历史后，后续轮次模型自己看得到；
+    // 反复注入只会占 token、刷屏。
+    let announced = false
+
     return {
       tools: createTools().map(toTpiTool),
+      lifecycle: {
+        /**
+         * 每轮开始时判一次本体状态，只在「数据根不存在」时向本轮注入提示。
+         *
+         * 这个钩子每轮都会跑，两条硬纪律：
+         *   1) 自己兜住所有异常 —— 绝不让 turnStart 把本轮对话搞坏；
+         *   2) 宿主没给 promptContext（未声明能力或版本过旧）时直接返回。
+         * 宿主给的 preTurn 预算 2000ms（rivet-runtime: budgetMs 0x7d0），实际是两次 stat。
+         */
+        turnStart() {
+          if (announced) return
+          const promptContext = host.promptContext
+          if (!promptContext) return
+          try {
+            const block = buildBodyStatusBlock(inspectBody())
+            if (block === null) return
+            promptContext.setBlock(block)
+            announced = true
+          } catch (err) {
+            host.log?.warn?.(`leash-bridge turnStart 失败（已忽略）：${String(err?.message ?? err)}`)
+          }
+        },
+      },
     }
   },
 })

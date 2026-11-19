@@ -3,19 +3,20 @@
   "kind": "tianshu.plugin",
   "id": "leash-bridge",
   "displayName": "屏幕绳子桥",
-  "version": "0.5.0",
-  "description": "连接 ScreenLeash（屏幕边缘挂件）：读取挂在屏幕四边的卡片，也能挂上、删除、换边，或让挂件粘贴当前剪贴板内容。",
+  "version": "0.5.3",
+  "description": "连接 ScreenLeash（屏幕边缘挂件）：读取挂在屏幕四边的卡片，也能挂上、删除、换边，或让挂件粘贴当前剪贴板内容。需先安装并运行 ScreenLeash 本体——只装本插件时绳子不会出现，投递的命令也不会落卡（leash_info 的 inbox.consumerState 可自查）。本体下载（win-x64 目录版，解压即用）：https://github.com/l410728l-a11y/ScreenLeash/releases/latest。未检测到本体时，会在每个会话首轮向当前对话注入一次提示（仅本机状态与下载地址，不含用户数据、不联网）。",
   "runtime": "agent",
   "entry": "index.js",
   "capabilities": [
     "tools",
+    "promptContext",
     "log"
   ],
   "contributes": {
     "tools": [
       {
         "name": "leash_info",
-        "description": "查看 ScreenLeash 数据目录状态：卡片总数、各边分布、items.json 最后写入时间"
+        "description": "查看 ScreenLeash 数据目录状态：卡片总数、各边分布、items.json 最后写入时间；并报收件箱里是否有超过 10 秒未被消费的命令（inbox.consumerState=stalled-or-absent 通常意味着本体未运行）。另给边可见性的默认值：本体默认只开右侧，看不到绳子先确认右边没被关"
       },
       {
         "name": "leash_list",
@@ -42,7 +43,9 @@
         "description": "让挂件把系统剪贴板当前内容挂到绳子上（插件不读剪贴板）"
       }
     ],
-    "lifecycle": []
+    "lifecycle": [
+      "turnStart"
+    ]
   },
   "permissions": {
     "fs": true
